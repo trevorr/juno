@@ -1,0 +1,49 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#define ELEMENT_TYPE string
+#define ELEMENT_NULL null
+
+#define DUMP_STRING(o) ((o != null) ? o : "(null)")
+#define EQUALS(a,b) ((a != null) ? a.compare(b) == 0 : (b == null))
+#define HASH_CODE(o) ((o != null) ? o.hash(32'h7fff_ffff) : 0)
+#define DESTROY(o) o = null
+
+#define ITERATOR_CLASS StrIterator
+#define EMPTY_ITERATOR_CLASS StrEmptyIterator
+#define COLLECTION_CLASS StrCollection
+
+#define LIST_ITERATOR_CLASS StrListIterator
+#define LIST_CLASS StrList
+
+#define ARRAY_LIST_ITERATOR_CLASS StrArrayListIterator
+#define ARRAY_LIST_CLASS StrArrayList
+
+#define LINKED_LIST_NODE_CLASS StrLinkedListNode
+#define LINKED_LIST_ITERATOR_CLASS StrLinkedListIterator
+#define LINKED_LIST_CLASS StrLinkedList
+
+#define SET_CLASS StrSet
+
+#define HASH_SET_CLASS StrHashSet
+#define HASH_SET_HASH_MAP_CLASS StrHashMap
+
+#define COMPARATOR_CLASS StrComparator
+
+#define SORTED_SET_CLASS StrSortedSet
+
+#define TREE_SET_CLASS StrTreeSet
+#define TREE_SET_TREE_MAP_CLASS StrTreeMap
+

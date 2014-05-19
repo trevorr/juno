@@ -1,0 +1,122 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "sax.vrh"
+#include "filestreams.vrh"
+
+////////////////////////////////////////////////////////////
+// XmlInputSource
+////////////////////////////////////////////////////////////
+
+class XmlInputSource
+extends SaxInputSource
+{
+    local InputStream stream;
+    local string encoding;
+    local string publicId;
+    local string systemId;
+
+    task new(InputStream _stream)
+    {
+        stream = _stream;
+        encoding = "ASCII";
+    }
+
+    // Get the character stream for this input source.
+    virtual function InputStream getStream()
+    {
+        getStream = stream;
+    }
+
+    // Get the character encoding for a byte stream or URI.
+    virtual function string getEncoding()
+    {
+        getEncoding = encoding;
+    }
+
+    // Get the public identifier for this input source.
+    virtual function string getPublicId()
+    {
+        getPublicId = publicId;
+    }
+
+    // Get the system identifier for this input source.
+    virtual function string getSystemId()
+    {
+        getSystemId = systemId;
+    }
+
+    // Set the public identifier for this input source.
+    task setPublicId(string _publicId)
+    {
+        publicId = _publicId;
+    }
+
+    // Set the system identifier for this input source.
+    task setSystemId(string _systemId)
+    {
+        systemId = _systemId;
+    }
+}
+
+local function XmlInputSource getFileInputSource(string filename)
+{
+    FileInputStream stream;
+    XmlInputSource source;
+
+    stream = new(filename);
+
+    source = new(stream);
+    source.setSystemId(filename);
+
+    getFileInputSource = source;
+}
+
+function XmlInputSource getXmlInputSource(string uri)
+{
+    static integer tempseq = 0;
+    string proto;
+    string hostpath;
+
+    if (uri.match("^([A-Za-z]+)://")) {
+        proto = uri.backref(0);
+        hostpath = uri.postmatch();
+    } else {
+        proto = "file";
+        hostpath = uri;
+    }
+
+    case (proto) {
+        "file" : {
+            getXmlInputSource = getFileInputSource(hostpath);
+        }
+        "http", "ftp" : {
+            string tempfile;
+            integer res;
+
+            tempfile = psprintf("wget%0d.tmp", tempseq++);
+            res = os_command(psprintf("wget -q -O %s %s", tempfile, uri));
+            if (res == 0) {
+                getXmlInputSource = getFileInputSource(tempfile);
+            } else {
+                error("Error retrieving %s to %s\n", uri, tempfile);
+            }
+        }
+        default : {
+            error("Unsupported protocol: %s\n", proto);
+        }
+    }
+}
+

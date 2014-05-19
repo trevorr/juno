@@ -1,0 +1,60 @@
+#!/bin/sh
+# Utility script to setup the correct classpath and run juno
+
+#############################################################################
+# Check that environment variables are set                                  #
+# JOVE_HOME should point to the base of a Jove installation (src or binary) #
+# JUNO_HOME should point to the base of a Juno installation                 #
+# JAVA_HOME should point to the base of a Java installation                 #
+#############################################################################
+if [ ! -e "${JOVE_HOME}/bin" -a  ! -e "${JOVE_HOME}/java/jove" ]; then
+    echo "JOVE_HOME must point to a valid Jove installation"
+    exit 1
+fi
+if [ ! -e "${JUNO_HOME}/java/juno" ]; then
+    echo "JUNO_HOME must point to a valid Juno installation"
+    exit 1
+fi
+if [ ! -e "${JAVA_HOME}/bin/java" ]; then
+    echo "JAVA_HOME must point to a valid Java installation"
+    exit 1
+fi
+
+############################
+# Construct Jove Classpath #
+############################
+JOVE_PKGS="jove jove-ifgen langschema langschema-java langschema-jove newisys-utils randsolver"
+JOVE_CLASSPATH=""
+if [ -e "${JOVE_HOME}/bin" ]; then
+    # Found Jove binary install    
+    for PKG in ${JOVE_PKGS}
+    do
+        JOVE_CLASSPATH=${JOVE_CLASSPATH}:${JOVE_HOME}/bin/${PKG}.jar
+    done
+else 
+    # Must be Jove src install
+    for PKG in ${JOVE_PKGS}
+    do
+        JOVE_CLASSPATH=${JOVE_CLASSPATH}:${JOVE_HOME}/java/${PKG}/bin
+    done
+fi
+
+####################################
+# Construct Juno Classpath         #
+# Juno only comes as a source dist #
+####################################
+JUNO_PKGS="juno juno-runtime langschema-vera langsource make-parser vera-parser vlogdef"
+JUNO_CLASSPATH=""
+for PKG in ${JUNO_PKGS}
+do
+    JUNO_CLASSPATH=${JUNO_CLASSPATH}:${JUNO_HOME}/java/${PKG}/bin
+done
+
+#########################################################
+# Set Java options, create final classpath and run Juno #
+#########################################################
+JAVA_OPTS="-Xms128M -Xmx256M -ea"
+CLASSPATH=${CLASSPATH}:${JOVE_CLASSPATH}:${JUNO_CLASSPATH}
+
+${JAVA_HOME}/bin/java ${JAVA_OPTS} -cp ${CLASSPATH} com.newisys.juno.JunoTranslator "$@"
+

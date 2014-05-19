@@ -1,0 +1,211 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "sax.vrh"
+#include "arraylist.vrh"
+#include "strhashmap.vrh"
+#include "xmlnamescope.vrh"
+
+////////////////////////////////////////////////////////////
+// XmlAttribute
+////////////////////////////////////////////////////////////
+
+class XmlAttribute
+extends Object
+{
+    string prefix;
+    string localName;
+    string qname;
+    string uri;
+    string type;
+    string value;
+    integer index;
+
+    task new(string _prefix, string _localName, string _qname,
+        string _type, string _value, integer _index)
+    {
+        prefix = _prefix;
+        localName = _localName;
+        qname = _qname;
+        uri = null;
+        type = _type;
+        value = _value;
+        index = _index;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// XmlAttributes
+////////////////////////////////////////////////////////////
+
+class XmlAttributes
+extends SaxAttributes
+{
+    local ArrayList attrList;
+    local StrHashMap qnameMap;
+    local StrHashMap nsnameMap;
+
+    task new()
+    {
+        attrList = new;
+        qnameMap = new;
+        nsnameMap = new;
+    }
+
+    // Adds a new attribute to the list.
+    task addAttr(string prefix, string localName, string type, string value)
+    {
+        string qname;
+        XmlAttribute attr;
+
+        qname = (prefix != null) ? { prefix, ":", localName } : localName;
+        attr = new(prefix, localName, qname, type, value, attrList.size());
+        attrList.add(attr);
+        qnameMap.put(qname, attr);
+    }
+
+    // Resolves the URIs of each attribute using the given scope.
+    task resolveURIs(XmlNameScope scope)
+    {
+        Iterator i;
+
+        nsnameMap.clear();
+        i = attrList.iterator();
+        while (i.hasNext()) {
+            XmlAttribute attr;
+
+            cast_assign(attr, i.next());
+            if (scope != null && attr.prefix != null) {
+                attr.uri = scope.lookupURI(attr.prefix);
+            }
+            nsnameMap.put({ attr.uri, ":", attr.localName }, attr);
+        }
+    }
+
+    // Free resources associated with this object.
+    task destroy()
+    {
+        attrList.destroy();
+        qnameMap.destroy();
+        nsnameMap.destroy();
+    }
+
+    // Look up the index of an attribute by XML 1.0 qualified name.
+    virtual function integer getIndexByQName(string qname)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, qnameMap.get(qname));
+        getIndexByQName = (attr != null) ? attr.index : -1;
+    }
+
+    // Look up the index of an attribute by Namespace name.
+    virtual function integer getIndexByNSName(string uri, string localName)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, nsnameMap.get({ uri, ":", localName }));
+        getIndexByNSName = (attr != null) ? attr.index : -1;
+    }
+
+    // Return the number of attributes in the list.
+    virtual function integer getLength()
+    {
+        getLength = attrList.size();
+    }
+
+    // Look up an attribute's local name by index.
+    virtual function string getLocalName(integer index)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, attrList.get(index));
+        getLocalName = attr.localName;
+    }
+
+    // Look up an attribute's XML 1.0 qualified name by index.
+    virtual function string getQName(integer index)
+    {
+        XmlAttribute attr;
+        string qname;
+
+        cast_assign(attr, attrList.get(index));
+        getQName = attr.qname;
+    }
+
+    // Look up an attribute's type by index.
+    virtual function string getType(integer index)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, attrList.get(index));
+        getType = attr.type;
+    }
+
+    // Look up an attribute's type by XML 1.0 qualified name.
+    virtual function string getTypeByQName(string qname)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, qnameMap.get(qname));
+        getTypeByQName = (attr != null) ? attr.type : null;
+    }
+
+    // Look up an attribute's type by Namespace name.
+    virtual function string getTypeByNSName(string uri, string localName)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, nsnameMap.get({ uri, ":", localName }));
+        getTypeByNSName = (attr != null) ? attr.type : null;
+    }
+
+    // Look up an attribute's Namespace URI by index.
+    virtual function string getURI(integer index)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, attrList.get(index));
+        getURI = attr.uri;
+    }
+
+    // Look up an attribute's value by index.
+    virtual function string getValue(integer index)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, attrList.get(index));
+        getValue = attr.value;
+    }
+
+    // Look up an attribute's value by XML 1.0 qualified name.
+    virtual function string getValueByQName(string qname)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, qnameMap.get(qname));
+        getValueByQName = (attr != null) ? attr.value : null;
+    }
+
+    // Look up an attribute's value by Namespace name.
+    virtual function string getValueByNSName(string uri, string localName)
+    {
+        XmlAttribute attr;
+
+        cast_assign(attr, nsnameMap.get({ uri, ":", localName }));
+        getValueByNSName = (attr != null) ? attr.value : null;
+    }
+}
+

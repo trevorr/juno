@@ -1,0 +1,97 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// AssocArraySet
+////////////////////////////////////////////////////////////
+
+class ASSOC_ARRAY_SET_CLASS
+extends SORTED_SET_CLASS
+{
+    local ASSOC_ARRAY_SET_MAP_CLASS assocArrayMap;
+
+    // Collection
+    virtual task add(ELEMENT_TYPE o);
+    virtual task clear();
+    virtual function bit contains(ELEMENT_TYPE o);
+    virtual function ITERATOR_CLASS iterator();
+    virtual task remove(ELEMENT_TYPE o);
+    virtual task setDestroyOnRemove(bit value);
+    virtual function integer size();
+
+    // SortedSet
+    virtual function COMPARATOR_CLASS comparator();
+
+    // AssocArraySet
+    task new();
+}
+
+task ASSOC_ARRAY_SET_CLASS::add(ELEMENT_TYPE o)
+{
+    assocArrayMap.put(o, null);
+}
+
+task ASSOC_ARRAY_SET_CLASS::clear()
+{
+    assocArrayMap.clear();
+}
+
+function bit ASSOC_ARRAY_SET_CLASS::contains(ELEMENT_TYPE o)
+{
+    contains = assocArrayMap.containsKey(o);
+}
+
+function ITERATOR_CLASS ASSOC_ARRAY_SET_CLASS::iterator()
+{
+    SET_CLASS keySet;
+
+    keySet = assocArrayMap.keySet();
+    iterator = keySet.iterator();
+}
+
+task ASSOC_ARRAY_SET_CLASS::remove(ELEMENT_TYPE o)
+{
+    assocArrayMap.remove(o);
+}
+
+task ASSOC_ARRAY_SET_CLASS::setDestroyOnRemove(bit value)
+{
+    super.setDestroyOnRemove(value);
+    assocArrayMap.setDestroyKeyOnRemove(value);
+}
+
+function integer ASSOC_ARRAY_SET_CLASS::size()
+{
+    size = assocArrayMap.size();
+}
+
+function COMPARATOR_CLASS ASSOC_ARRAY_SET_CLASS::comparator()
+{
+    comparator = assocArrayMap.comparator();
+}
+
+task ASSOC_ARRAY_SET_CLASS::new()
+{
+    setClassName("AssocArraySet");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new()",
+        getObjectName()))
+
+    assocArrayMap = new();
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new: assocArrayMap=%s",
+        getObjectName(), OBJECT_NAME(assocArrayMap)))
+}
+

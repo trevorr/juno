@@ -1,0 +1,533 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// Map
+////////////////////////////////////////////////////////////
+
+typedef class MAP_ENTRY_CLASS;
+typedef class MAP_KEY_SET_CLASS;
+typedef class MAP_VALUE_COLLECTION_CLASS;
+
+virtual class MAP_CLASS
+extends CollectionsBase
+{
+    protected bit destroyKeyOnRemove;
+    protected bit destroyValueOnRemove;
+
+    // Object
+    virtual function string dumpString();
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+    virtual task destroy();
+
+    // Map
+    virtual task clear();
+    virtual function bit containsKey(KEY_TYPE key);
+    virtual function bit containsValue(VALUE_TYPE value);
+    virtual function Set entrySet(); // abstract
+    virtual function MAP_ENTRY_CLASS findKey(KEY_TYPE key);
+    virtual function MAP_ENTRY_CLASS findValue(VALUE_TYPE value);
+    virtual function VALUE_TYPE get(KEY_TYPE key);
+    function bit isDestroyKeyOnRemove();
+    function bit isDestroyValueOnRemove();
+    virtual function bit isEmpty();
+    virtual function KEY_SET_CLASS keySet();
+    virtual task put(KEY_TYPE key, VALUE_TYPE value); // abstract
+    virtual task putAll(MAP_CLASS map);
+    virtual task remove(KEY_TYPE key);
+    virtual task setDestroyKeyOnRemove(bit value);
+    virtual task setDestroyValueOnRemove(bit value);
+    virtual function integer size();
+    virtual function VALUE_COLLECTION_CLASS values();
+
+    task new();
+}
+
+function string MAP_CLASS::dumpString()
+{
+    Set es;
+
+    es = entrySet();
+    dumpString = es.dumpString();
+}
+
+function bit MAP_CLASS::equals(Object o)
+{
+    Object thisObject;
+    MAP_CLASS otherMap;
+    Set es;
+    Iterator i;
+
+    thisObject = this;
+    if (o == thisObject) {
+        equals = 1;
+        return;
+    }
+    if (!cast_assign(otherMap, o, CHECK)) {
+        equals = 0;
+        return;
+    }
+    if (size() != otherMap.size()) {
+        equals = 0;
+        return;
+    }
+
+    es = entrySet();
+    i = es.iterator();
+    while (i.hasNext()) {
+        MAP_ENTRY_CLASS thisEntry;
+        MAP_ENTRY_CLASS otherEntry;
+
+        cast_assign(thisEntry, i.next());
+        otherEntry = otherMap.findKey(thisEntry.key);
+        if (otherEntry == null ||
+            !VALUE_EQUALS(thisEntry.value, otherEntry.value)) {
+            equals = 0;
+            return;
+        }
+    }
+
+    equals = 1;
+}
+
+function integer MAP_CLASS::hashCode()
+{
+    Set es;
+
+    es = entrySet();
+    hashCode = es.hashCode();
+}
+
+task MAP_CLASS::destroy()
+{
+    clear();
+}
+
+task MAP_CLASS::clear()
+{
+    Set es;
+
+    es = entrySet();
+    es.clear();
+}
+
+function bit MAP_CLASS::containsKey(KEY_TYPE key)
+{
+    MAP_ENTRY_CLASS entry;
+
+    entry = findKey(key);
+    containsKey = (entry != null);
+}
+
+function bit MAP_CLASS::containsValue(VALUE_TYPE value)
+{
+    MAP_ENTRY_CLASS entry;
+
+    entry = findValue(value);
+    containsValue = (entry != null);
+}
+
+function MAP_ENTRY_CLASS MAP_CLASS::findKey(KEY_TYPE key)
+{
+    Set es;
+    Iterator i;
+
+    es = entrySet();
+    i = es.iterator();
+    while (i.hasNext()) {
+        MAP_ENTRY_CLASS entry;
+
+        cast_assign(entry, i.next());
+        if (KEY_EQUALS(key, entry.key)) {
+            findKey = entry;
+            return;
+        }
+    }
+
+    findKey = null;
+}
+
+function MAP_ENTRY_CLASS MAP_CLASS::findValue(VALUE_TYPE value)
+{
+    Set es;
+    Iterator i;
+
+    es = entrySet();
+    i = es.iterator();
+    while (i.hasNext()) {
+        MAP_ENTRY_CLASS entry;
+
+        cast_assign(entry, i.next());
+        if (VALUE_EQUALS(value, entry.value)) {
+            findValue = entry;
+            return;
+        }
+    }
+
+    findValue = null;
+}
+
+function VALUE_TYPE MAP_CLASS::get(KEY_TYPE key)
+{
+    MAP_ENTRY_CLASS entry;
+
+    entry = findKey(key);
+    get = (entry != null) ? entry.value : VALUE_NULL;
+}
+
+function bit MAP_CLASS::isDestroyKeyOnRemove()
+{
+    isDestroyKeyOnRemove = destroyKeyOnRemove;
+}
+
+function bit MAP_CLASS::isDestroyValueOnRemove()
+{
+    isDestroyValueOnRemove = destroyValueOnRemove;
+}
+
+function bit MAP_CLASS::isEmpty()
+{
+    isEmpty = (size() == 0);
+}
+
+function KEY_SET_CLASS MAP_CLASS::keySet()
+{
+    MAP_KEY_SET_CLASS mapKeySet = new(this);
+    keySet = mapKeySet;
+}
+
+task MAP_CLASS::putAll(MAP_CLASS map)
+{
+    Set es;
+    Iterator i;
+
+    es = map.entrySet();
+    i = es.iterator();
+    while (i.hasNext()) {
+        MAP_ENTRY_CLASS entry;
+
+        cast_assign(entry, i.next());
+        put(entry.key, entry.value);
+    }
+}
+
+task MAP_CLASS::remove(KEY_TYPE key)
+{
+    Set es;
+    Iterator i;
+
+    es = entrySet();
+    i = es.iterator();
+    while (i.hasNext()) {
+        MAP_ENTRY_CLASS entry;
+
+        cast_assign(entry, i.next());
+        if (KEY_EQUALS(key, entry.key)) {
+            i.remove();
+            return;
+        }
+    }
+}
+
+task MAP_CLASS::setDestroyKeyOnRemove(bit value)
+{
+    destroyKeyOnRemove = value;
+}
+
+task MAP_CLASS::setDestroyValueOnRemove(bit value)
+{
+    destroyValueOnRemove = value;
+}
+
+function integer MAP_CLASS::size()
+{
+    Set es;
+
+    es = entrySet();
+    size = es.size();
+}
+
+function VALUE_COLLECTION_CLASS MAP_CLASS::values()
+{
+    MAP_VALUE_COLLECTION_CLASS mapValues = new(this);
+    values = mapValues;
+}
+
+task MAP_CLASS::new()
+{
+    destroyKeyOnRemove = 0;
+    destroyValueOnRemove = 0;
+}
+
+////////////////////////////////////////////////////////////
+// MapEntry
+////////////////////////////////////////////////////////////
+
+class MAP_ENTRY_CLASS
+extends Object
+{
+    KEY_TYPE key;
+    VALUE_TYPE value;
+
+    // Object
+    virtual function string dumpString();
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+
+    task destroyKey();
+    task destroyValue();
+
+    task new(KEY_TYPE _key, VALUE_TYPE _value);
+}
+
+function string MAP_ENTRY_CLASS::dumpString()
+{
+    dumpString = { KEY_DUMP_STRING(key), "=", VALUE_DUMP_STRING(value) };
+}
+
+function bit MAP_ENTRY_CLASS::equals(Object o)
+{
+    MAP_ENTRY_CLASS otherEntry;
+
+    if (!cast_assign(otherEntry, o, CHECK)) {
+        equals = 0;
+        return;
+    }
+
+    equals = KEY_EQUALS(key, otherEntry.key) &&
+        VALUE_EQUALS(value, otherEntry.value);
+}
+
+function integer MAP_ENTRY_CLASS::hashCode()
+{
+    hashCode = KEY_HASH_CODE(key) ^ VALUE_HASH_CODE(value);
+}
+
+task MAP_ENTRY_CLASS::destroyKey()
+{
+    KEY_DESTROY(key);
+}
+
+task MAP_ENTRY_CLASS::destroyValue()
+{
+    VALUE_DESTROY(value);
+}
+
+task MAP_ENTRY_CLASS::new(KEY_TYPE _key, VALUE_TYPE _value)
+{
+    key = _key;
+    value = _value;
+}
+
+////////////////////////////////////////////////////////////
+// MapKeySet
+////////////////////////////////////////////////////////////
+
+typedef class ENTRY_SET_KEY_ITERATOR_CLASS;
+
+local class MAP_KEY_SET_CLASS
+extends KEY_SET_CLASS
+{
+    local MAP_CLASS map;
+
+    // Collection
+    virtual task add(KEY_TYPE o);
+    virtual function bit contains(KEY_TYPE o);
+    virtual function KEY_ITERATOR_CLASS iterator();
+    virtual function integer size();
+
+    // MapKeySet
+    task new(MAP_CLASS _map);
+}
+
+task MAP_KEY_SET_CLASS::add(KEY_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map key sets")
+}
+
+function bit MAP_KEY_SET_CLASS::contains(KEY_TYPE o)
+{
+    contains = map.containsKey(o);
+}
+
+function KEY_ITERATOR_CLASS MAP_KEY_SET_CLASS::iterator()
+{
+    Set es;
+    Iterator i;
+    ENTRY_SET_KEY_ITERATOR_CLASS keyIter;
+
+    es = map.entrySet();
+    i = es.iterator();
+    keyIter = new(i);
+    iterator = keyIter;
+}
+
+function integer MAP_KEY_SET_CLASS::size()
+{
+    size = map.size();
+}
+
+task MAP_KEY_SET_CLASS::new(MAP_CLASS _map)
+{
+    map = _map;
+}
+
+////////////////////////////////////////////////////////////
+// MapValueCollection
+////////////////////////////////////////////////////////////
+
+typedef class ENTRY_SET_VALUE_ITERATOR_CLASS;
+
+local class MAP_VALUE_COLLECTION_CLASS
+extends VALUE_COLLECTION_CLASS
+{
+    local MAP_CLASS map;
+
+    // Collection
+    virtual task add(VALUE_TYPE o);
+    virtual function bit contains(VALUE_TYPE o);
+    virtual function VALUE_ITERATOR_CLASS iterator();
+    virtual function integer size();
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+
+    // MapValueCollection
+    task new(MAP_CLASS _map);
+}
+
+function bit MAP_VALUE_COLLECTION_CLASS::equals(Object o)
+{
+    equals = 0;
+    LOG_MSG(logIntf, LS_FATAL, "equals() not supported on map value collections")
+}
+
+function integer MAP_VALUE_COLLECTION_CLASS::hashCode()
+{
+    hashCode = 0;
+    LOG_MSG(logIntf, LS_FATAL, "hashCode() not supported on map value collections")
+}
+
+
+task MAP_VALUE_COLLECTION_CLASS::add(VALUE_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map value collections")
+}
+
+function bit MAP_VALUE_COLLECTION_CLASS::contains(VALUE_TYPE o)
+{
+    contains = map.containsValue(o);
+}
+
+function VALUE_ITERATOR_CLASS MAP_VALUE_COLLECTION_CLASS::iterator()
+{
+    Set es;
+    Iterator i;
+    ENTRY_SET_VALUE_ITERATOR_CLASS valueIter;
+
+    es = map.entrySet();
+    i = es.iterator();
+    valueIter = new(i);
+    iterator = valueIter;
+}
+
+function integer MAP_VALUE_COLLECTION_CLASS::size()
+{
+    size = map.size();
+}
+
+task MAP_VALUE_COLLECTION_CLASS::new(MAP_CLASS _map)
+{
+    map = _map;
+}
+
+////////////////////////////////////////////////////////////
+// EntrySetKeyIterator
+////////////////////////////////////////////////////////////
+
+class ENTRY_SET_KEY_ITERATOR_CLASS
+extends KEY_ITERATOR_CLASS
+{
+    local Iterator entrySetIter;
+
+    task new(Iterator _entrySetIter);
+
+    virtual function bit hasNext();
+    virtual function KEY_TYPE next();
+    virtual task remove();
+}
+
+task ENTRY_SET_KEY_ITERATOR_CLASS::new(Iterator _entrySetIter)
+{
+    entrySetIter = _entrySetIter;
+}
+
+function bit ENTRY_SET_KEY_ITERATOR_CLASS::hasNext()
+{
+    hasNext = entrySetIter.hasNext();
+}
+
+function KEY_TYPE ENTRY_SET_KEY_ITERATOR_CLASS::next()
+{
+    MAP_ENTRY_CLASS entry;
+
+    cast_assign(entry, entrySetIter.next());
+    next = entry.key;
+}
+
+task ENTRY_SET_KEY_ITERATOR_CLASS::remove()
+{
+    entrySetIter.remove();
+}
+
+////////////////////////////////////////////////////////////
+// EntrySetValueIterator
+////////////////////////////////////////////////////////////
+
+class ENTRY_SET_VALUE_ITERATOR_CLASS
+extends VALUE_ITERATOR_CLASS
+{
+    local Iterator entrySetIter;
+
+    task new(Iterator _entrySetIter);
+
+    virtual function bit hasNext();
+    virtual function VALUE_TYPE next();
+    virtual task remove();
+}
+
+task ENTRY_SET_VALUE_ITERATOR_CLASS::new(Iterator _entrySetIter)
+{
+    entrySetIter = _entrySetIter;
+}
+
+function bit ENTRY_SET_VALUE_ITERATOR_CLASS::hasNext()
+{
+    hasNext = entrySetIter.hasNext();
+}
+
+function VALUE_TYPE ENTRY_SET_VALUE_ITERATOR_CLASS::next()
+{
+    MAP_ENTRY_CLASS entry;
+
+    cast_assign(entry, entrySetIter.next());
+    next = entry.value;
+}
+
+task ENTRY_SET_VALUE_ITERATOR_CLASS::remove()
+{
+    entrySetIter.remove();
+}
+

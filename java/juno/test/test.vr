@@ -1,0 +1,119 @@
+#define macro96 82
+#define macro9 9
+#define macrofunc(a,b) a/**/b
+
+#define macro1 42
+#define macro2 macro1
+#define macro3 macro1  +  mac/**/ro2
+#undef macro1
+#define macro1 52
+
+class a
+{
+    integer x = 6;
+    integer y;
+
+    task new(integer i) { y = i; }
+}
+
+extern class x extends a
+{
+    integer x = 666;
+    rand integer z[] assoc_size 666;
+}
+
+class x extends a(7)
+{
+    integer x = super.x;
+    rand integer z[] assoc_size 8;
+
+    task foo()
+    {
+        printf("%0d\n", y);
+    }
+}
+
+extern class j
+{
+    static integer j;
+}
+
+#include <vera_defines.vrh>
+
+enum Bar = red=10,blue;       // Enums have global scope
+
+class j
+{
+    static integer j = 3;
+
+    x x = new;
+
+    task new()
+    {
+        printf("%0d\n", j);
+    }
+
+    task foo(integer foo = 5)
+    {
+        printf("%0d\n", foo);
+        if (foo == 4) this.foo(*);
+        else bar();
+    }
+
+    task bar();
+}
+
+task j::bar()
+{
+    integer i, j;
+    x x = new;
+    a a = new x;
+    string s = "bar";
+    void = x.randomize();
+    printf("%0d\n", x.x);
+    printf("%0d\n", this.j);
+    printf("%0d\n", assoc_index(CHECK, x.z));
+    printf("%0d\n", s.len());
+    fork
+        repeat (this.j) printf("%s\n", s);
+        {
+            integer count = 2;
+            while (--count > 0)
+                for (i = 0, j = i; i < 4 && j < 8; ++i, j += 2) {
+                    printf("%0d%0d", i, j);
+                }
+        }
+    join all
+    printf("\n");
+    randcase {
+        0: { printf("impossible\n"); }
+        this.j: printf("possible\n");
+    }
+}
+
+function bit[1+2+3:0] ugh()
+{
+    ugh = 4'b01zx;
+}
+
+program main
+{
+    {
+        integer j = 2;
+        j foo;
+        {
+            integer j = 1;
+            {
+                integer j = 0;
+                printf("%0d\n", j);
+            }
+            printf("%0d\n", j);
+        }
+        printf("%0d\n", j);
+        foo = new;
+        foo.foo(4);
+    }
+    printf("%0d\n", macrofunc(macro9,6));
+    printf("%0d\n", macro1);
+    printf("%0d\n", macro3);
+}

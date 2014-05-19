@@ -1,0 +1,61 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+// key type defines
+
+#define KEY_TYPE string
+#define KEY_NULL null
+
+#define KEY_DUMP_STRING(o) ((o != null) ? o : "(null)")
+#define KEY_EQUALS(a,b) ((a != null) ? a.compare(b) == 0 : (b == null))
+#define KEY_HASH_CODE(o) ((o != null) ? o.hash(32'h7fff_ffff) : 0)
+#define KEY_DESTROY(o) o = null
+
+#define KEY_SET_CLASS StrSet
+#define KEY_ITERATOR_CLASS StrIterator
+#define KEY_COMPARATOR_CLASS StrComparator
+#define DEFAULT_KEY_COMPARATOR_CLASS DefaultStrComparator
+
+// value type defines
+
+#define VALUE_TYPE integer
+#define VALUE_NULL -1
+
+#define VALUE_DUMP_STRING(o) psprintf("%0d", o)
+#define VALUE_EQUALS(a,b) (a == b)
+#define VALUE_HASH_CODE(o) o
+#define VALUE_DESTROY(o) o = -1
+
+#define VALUE_COLLECTION_CLASS IntCollection
+#define VALUE_ITERATOR_CLASS IntIterator
+
+// Map defines
+
+#define MAP_CLASS StrIntMap
+#define MAP_ENTRY_CLASS StrIntMapEntry
+#define MAP_KEY_SET_CLASS StrIntMapKeySet
+#define MAP_VALUE_COLLECTION_CLASS StrIntMapValueCollection
+#define ENTRY_SET_KEY_ITERATOR_CLASS StrIntEntrySetKeyIterator
+#define ENTRY_SET_VALUE_ITERATOR_CLASS StrIntEntrySetValueIterator
+
+// HashMap defines
+
+#define HASH_MAP_CLASS StrIntHashMap
+#define HASH_MAP_ENTRY_CLASS StrIntHashMapEntry
+#define HASH_MAP_ENTRY_SET_CLASS StrIntHashMapEntrySet
+#define HASH_MAP_KEY_SET_CLASS StrIntHashMapKeySet
+#define HASH_MAP_VALUE_COLLECTION_CLASS StrIntHashMapValueCollection
+#define HASH_MAP_ENTRY_ITERATOR_CLASS StrIntHashMapEntryIterator
+

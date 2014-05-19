@@ -1,0 +1,122 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "common.vri"
+
+////////////////////////////////////////////////////////////
+// Object
+////////////////////////////////////////////////////////////
+
+#define OBJECT_ID(o) ((o != null) ? o.getObjectID() : 0)
+#define OBJECT_NAME(o) ((o != null) ? o.getObjectName() : "(null)")
+
+#define OBJECT_DUMP_STRING(o) ((o != null) ? o.dumpString() : "(null)")
+#define OBJECT_EQUALS(a,b) ((a != null) ? a.equals(b) : (b == null))
+#define OBJECT_HASH_CODE(o) ((o != null) ? o.hashCode() : 0)
+#define OBJECT_DESTROY(o) if (o != null) { o.destroy(); o = null; }
+
+#define OBJECT_ASSOC_ARRAY_DESTROY(array) \
+{ \
+    bit[63:0] index; \
+    if (assoc_index(FIRST, array, index)) { \
+        while (1) { \
+            Object o = array[index]; \
+            OBJECT_DESTROY(o) \
+            if (!assoc_index(NEXT, array, index)) break; \
+        } \
+    } \
+    assoc_index(DELETE, array); \
+}
+
+#define OBJECT_ARRAY_DESTROY(array,size) \
+{ \
+    integer index; \
+    for (index = 0; index < size; ++index) { \
+        Object o = array[index]; \
+        OBJECT_DESTROY(o) \
+        array[index] = null; \
+    } \
+}
+
+#define OBJECT_ARRAY_NULL(array,size) \
+{ \
+    integer index; \
+    for (index = 0; index < size; ++index) { \
+        array[index] = null; \
+    } \
+}
+
+class Object
+{
+    local static integer nextObjectID = 1;
+
+    local string className;
+    local integer objectID;
+    local string objectName;
+
+    task new()
+    {
+        className = "Object";
+        objectID = nextObjectID++;
+        objectName = null;
+    }
+
+    function string getClassName()
+    {
+        getClassName = className;
+    }
+
+    protected task setClassName(string name)
+    {
+        className = name;
+    }
+
+    function integer getObjectID()
+    {
+        getObjectID = objectID;
+    }
+
+    function string getObjectName()
+    {
+        getObjectName = (objectName != null) ? objectName :
+            psprintf("%s%0d", className, objectID);
+    }
+
+    task setObjectName(string name)
+    {
+        objectName = name;
+    }
+
+    virtual function string dumpString()
+    {
+        dumpString = getObjectName();
+    }
+
+    virtual function bit equals(Object o)
+    {
+        equals = (o == this);
+    }
+
+    virtual function integer hashCode()
+    {
+        hashCode = objectID;
+    }
+
+    virtual task destroy()
+    {
+        // overridden by subclasses to help garbage collection
+    }
+}
+

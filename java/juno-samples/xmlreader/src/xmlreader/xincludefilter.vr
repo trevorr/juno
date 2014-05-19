@@ -1,0 +1,243 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "xmlreader.vrh"
+#include "xmlinputsource.vrh"
+#include "uri.vrh"
+
+////////////////////////////////////////////////////////////
+// XIncludeContentFilter
+////////////////////////////////////////////////////////////
+
+typedef class XIncludeLocator;
+
+class XIncludeContentFilter
+extends SaxContentHandler
+{
+    local SaxXMLReader baseReader;
+    local SaxContentHandler baseHandler;
+    local SaxErrorHandler errorHandler;
+    local integer includeNesting;
+    local bit topLevel;
+    local XIncludeLocator xiLocator;
+
+    task new(SaxXMLReader _baseReader, SaxContentHandler _baseHandler,
+        SaxErrorHandler _errorHandler = null)
+    {
+        baseReader = _baseReader;
+        baseHandler = _baseHandler;
+        errorHandler = (_errorHandler != null) ? _errorHandler :
+            baseReader.getErrorHandler();
+        includeNesting = 0;
+        topLevel = 1;
+    }
+
+    // Receive notification of character data.
+    virtual task characters(string chars)
+    {
+        if (includeNesting == 0) {
+            baseHandler.characters(chars);
+        }
+    }
+
+    // Receive notification of the end of a document.
+    virtual task endDocument()
+    {
+        assert(includeNesting == 0);
+        if (topLevel) {
+            baseHandler.endDocument();
+        }
+    }
+
+    // Receive notification of the end of an element.
+    virtual task endElement(string namespaceURI, string localName, string qName)
+    {
+        if (includeNesting == 0) {
+            baseHandler.endElement(namespaceURI, localName, qName);
+        } else {
+            --includeNesting;
+        }
+    }
+
+    // End the scope of a prefix-URI mapping.
+    virtual task endPrefixMapping(string prefix)
+    {
+        if (includeNesting == 0) {
+            baseHandler.endPrefixMapping(prefix);
+        }
+    }
+
+    // Receive notification of ignorable whitespace in element content.
+    virtual task ignorableWhitespace(string chars)
+    {
+        if (includeNesting == 0) {
+            baseHandler.ignorableWhitespace(chars);
+        }
+    }
+
+    // Receive notification of a processing instruction.
+    virtual task processingInstruction(string target, string data)
+    {
+        if (includeNesting == 0) {
+            baseHandler.processingInstruction(target, data);
+        }
+    }
+
+    // Receive an object for locating the origin of SAX document events.
+    virtual task setDocumentLocator(SaxLocator _locator)
+    {
+        if (topLevel) {
+            xiLocator = new(_locator);
+            baseHandler.setDocumentLocator(xiLocator);
+        }
+        else if (xiLocator != null) {
+            xiLocator.base = _locator;
+        }
+    }
+
+    // Receive notification of a skipped entity.
+    virtual task skippedEntity(string name)
+    {
+        if (includeNesting == 0) {
+            baseHandler.skippedEntity(name);
+        }
+    }
+
+    // Receive notification of the beginning of a document.
+    virtual task startDocument()
+    {
+        assert(includeNesting == 0);
+        if (topLevel) {
+            baseHandler.startDocument();
+        }
+    }
+
+    // Receive notification of the beginning of an element.
+    virtual task startElement(string namespaceURI, string localName, string qName, SaxAttributes atts)
+    {
+        if (includeNesting == 0) {
+            if (namespaceURI == "http://www.w3.org/2001/XInclude") {
+                case (localName) {
+                    "include" : {
+                        string href = atts.getValueByNSName(null, "href");
+                        if (href != null) {
+                            XmlReader reader;
+                            XIncludeContentFilter filter;
+                            string uri;
+                            XmlInputSource source;
+                            SaxLocator realLocator;
+
+                            reader = new;
+                            reader.inheritHandlers(baseReader);
+
+                            filter = new(baseReader, baseHandler, errorHandler);
+                            filter.topLevel = 0;
+                            filter.xiLocator = xiLocator;
+                            reader.setContentHandler(filter);
+
+                            if (xiLocator != null) {
+                                uri = resolveRelativeURI(href, xiLocator.getSystemId());
+                                realLocator = xiLocator.base;
+                            } else {
+                                uri = href;
+                            }
+                            source = getXmlInputSource(uri);
+
+                            reader.parse(source);
+
+                            if (xiLocator != null) {
+                                xiLocator.base = realLocator;
+                            }
+                        } else {
+                            fatalError("XInclude: href not specified for include");
+                        }
+                    }
+                    "fallback" : {
+                        fatalError("XInclude: fallback outside of include");
+                    }
+                    default : {
+                        fatalError({ "XInclude: Unknown element: ", localName });
+                    }
+                }
+                ++includeNesting;
+            } else {
+                baseHandler.startElement(namespaceURI, localName, qName, atts);
+            }
+        }
+        else {
+            warning(psprintf("XInclude: Ignoring nested element: %s", qName));
+        }
+    }
+
+    // Begin the scope of a prefix-URI Namespace mapping.
+    virtual task startPrefixMapping(string prefix, string uri)
+    {
+        if (includeNesting == 0) {
+            baseHandler.startPrefixMapping(prefix, uri);
+        }
+    }
+
+    local task warning(string msg)
+    {
+        XmlError e = new(msg, xiLocator);
+        errorHandler.warning(e);
+    }
+
+    local task fatalError(string msg)
+    {
+        XmlError e = new(msg, xiLocator);
+        errorHandler.fatalError(e);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// XIncludeLocator
+////////////////////////////////////////////////////////////
+
+class XIncludeLocator
+extends SaxLocator
+{
+    SaxLocator base;
+
+    task new(SaxLocator _base)
+    {
+        base = _base;
+    }
+
+    // Return the public identifier for the current document event.
+    virtual function string getPublicId()
+    {
+        getPublicId = base.getPublicId();
+    }
+
+    // Return the system identifier for the current document event.
+    virtual function string getSystemId()
+    {
+        getSystemId = base.getSystemId();
+    }
+
+    // Return the line number where the current document event ends.
+    virtual function integer getLineNumber()
+    {
+        getLineNumber = base.getLineNumber();
+    }
+
+    // Return the column number where the current document event ends.
+    virtual function integer getColumnNumber()
+    {
+        getColumnNumber = base.getColumnNumber();
+    }
+}
+

@@ -1,0 +1,85 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+// key type defines
+
+#define KEY_TYPE string
+#define KEY_NULL null
+
+#define KEY_DUMP_STRING(o) ((o != null) ? o : "(null)")
+#define KEY_EQUALS(a,b) ((a != null) ? a.compare(b) == 0 : (b == null))
+#define KEY_HASH_CODE(o) ((o != null) ? o.hash(32'h7fff_ffff) : 0)
+#define KEY_DESTROY(o) o = null
+
+#define KEY_SET_CLASS StrSet
+#define KEY_ITERATOR_CLASS StrIterator
+#define KEY_COMPARATOR_CLASS StrComparator
+#define DEFAULT_KEY_COMPARATOR_CLASS DefaultStrComparator
+
+// value type defines
+
+#define VALUE_TYPE Object
+#define VALUE_NULL null
+
+#define VALUE_DUMP_STRING(o) ((o != null) ? o.dumpString() : "(null)")
+#define VALUE_EQUALS(a,b) ((a != null) ? a.equals(b) : (b == null))
+#define VALUE_HASH_CODE(o) ((o != null) ? o.hashCode() : 0)
+#define VALUE_DESTROY(o) if (o != null) o.destroy()
+
+#define VALUE_COLLECTION_CLASS Collection
+#define VALUE_ITERATOR_CLASS Iterator
+
+// Map defines
+
+#define MAP_CLASS StrMap
+#define MAP_ENTRY_CLASS StrMapEntry
+#define MAP_KEY_SET_CLASS StrMapKeySet
+#define MAP_VALUE_COLLECTION_CLASS StrMapValueCollection
+#define ENTRY_SET_KEY_ITERATOR_CLASS StrEntrySetKeyIterator
+#define ENTRY_SET_VALUE_ITERATOR_CLASS StrEntrySetValueIterator
+
+// HashMap defines
+
+#define HASH_MAP_CLASS StrHashMap
+#define HASH_MAP_ENTRY_CLASS StrHashMapEntry
+#define HASH_MAP_ENTRY_SET_CLASS StrHashMapEntrySet
+#define HASH_MAP_KEY_SET_CLASS StrHashMapKeySet
+#define HASH_MAP_VALUE_COLLECTION_CLASS StrHashMapValueCollection
+#define HASH_MAP_ENTRY_ITERATOR_CLASS StrHashMapEntryIterator
+
+// LinkedHashMap defines
+
+#define LINKED_HASH_MAP_CLASS StrLinkedHashMap
+#define LINKED_HASH_MAP_ENTRY_CLASS StrLinkedHashMapEntry
+#define LINKED_HASH_MAP_ENTRY_SET_CLASS StrLinkedHashMapEntrySet
+#define LINKED_HASH_MAP_KEY_SET_CLASS StrLinkedHashMapKeySet
+#define LINKED_HASH_MAP_VALUE_COLLECTION_CLASS StrLinkedHashMapValueCollection
+#define LINKED_HASH_MAP_ENTRY_ITERATOR_CLASS StrLinkedHashMapEntryIterator
+
+// SortedMap defines
+
+#define SORTED_MAP_CLASS StrSortedMap
+
+// TreeMap defines
+
+#define TREE_MAP_CLASS StrTreeMap
+#define TREE_MAP_ENTRY_CLASS StrTreeMapEntry
+#define TREE_MAP_ENTRY_SET_CLASS StrTreeMapEntrySet
+#define TREE_MAP_KEY_SET_CLASS StrTreeMapKeySet
+#define TREE_MAP_VALUE_COLLECTION_CLASS StrTreeMapValueCollection
+#define TREE_MAP_ENTRY_ITERATOR_CLASS StrTreeMapEntryIterator
+#define TREE_MAP_SUB_MAP_CLASS StrTreeMapSubMap
+#define TREE_MAP_SUB_MAP_ENTRY_SET_CLASS StrTreeMapSubMapEntrySet
+

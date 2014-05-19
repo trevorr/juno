@@ -1,0 +1,49 @@
+<project name="juno-runtime" default="compile" basedir=".">
+    <property environment="env" />
+    <property name="src" location="src" />
+    <property name="bin" location="bin" />
+    <property name="docs" location="docs" />
+    <property name="dist" location="dist" />
+    <property name="build.sysclasspath" value="last" />
+
+    <import file="../jove-defs.xml" optional="true" />
+
+    <target name="init">
+        <tstamp />
+        <mkdir dir="${bin}" />
+    </target>
+
+    <target name="compile" depends="init">
+        <javac srcdir="${src}" destdir="${bin}" source="1.5" excludes="**/package-info.java" debug="true">
+            <classpath path="${jove.classes}" />
+            <classpath path="${newisys-utils.classes}" />
+            <classpath path="${randsolver.classes}" />
+        </javac>
+    </target>
+
+    <target name="alldocs">
+        <mkdir dir="docs/api" />
+        <javadoc access="public" author="false" classpath="." destdir="docs/api" nodeprecated="false" nodeprecatedlist="false" noindex="false" nonavbar="false" notree="false" source="1.5" packagenames="com.newisys.dv,com.newisys.eventsim,com.newisys.random,com.newisys.juno.runtime,com.newisys.verilog.util" excludepackagenames="com.newisys.juno.mysql,com.newisys.behsim,com.newisys.dv.signalinterface,com.newisys.threadmarshal,com.newisys.verilog,com.newisys.verilog.pli,com.newisys.randsolver.*" sourcepath="../newisys-utils/src:../randsolver/src:../langschema-jove/src:../langschema-java/src:../langschema/src:../jove/src:src" splitindex="true" use="true" version="true" windowtitle="Jove API">
+            <link href="http://java.sun.com/j2se/1.5.0/docs/api/" />
+        </javadoc>
+    </target>
+
+    <target name="docs">
+        <mkdir dir="docs/api" />
+        <javadoc access="public" author="false" classpath="." destdir="docs/api" nodeprecated="false" nodeprecatedlist="false" noindex="false" nonavbar="false" notree="false" source="1.5" packagenames="com.newisys.juno.runtime" excludepackagenames="com.newisys.juno.mysql,com.newisys.behsim,com.newisys.dv.signalinterface,com.newisys.threadmarshal,com.newisys.verilog,com.newisys.verilog.pli,com.newisys.randsolver.*" sourcepath="../newisys-utils/src:../randsolver/src:../langschema-jove/src:../langschema-java/src:../langschema/src:../jove/src:src" splitindex="true" use="true" version="true" windowtitle="Jove API">
+            <link href="http://jove.sourceforge.net/docs/api/" />
+            <link href="http://java.sun.com/j2se/1.5.0/docs/api/" />
+        </javadoc>
+    </target>
+
+    <target name="dist" depends="compile,docs">
+        <mkdir dir="${dist}/lib" />
+        <jar jarfile="${dist}/lib/juno-runtime.jar" basedir="${bin}" manifest="manifest.mf" />
+    </target>
+
+    <target name="clean">
+        <delete dir="${bin}" />
+        <delete dir="${dist}" />
+        <delete dir="${docs}/api" />
+    </target>
+</project>

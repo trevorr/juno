@@ -1,0 +1,118 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "common.vri"
+
+////////////////////////////////////////////////////////////
+// Memory size utilities
+////////////////////////////////////////////////////////////
+
+#define KB(n) ((n) << 10)
+#define MB(n) ((n) << 20)
+#define GB(n) ((n) << 30)
+
+function Qword strToMemSize(string str)
+{
+    if (str.match("^([0-9]+)([KMG]?)B?$")) {
+        string digits;
+        integer num;
+        integer shift;
+
+        digits = str.backref(0);
+        num = digits.atoi();
+        case (str.backref(1)) {
+            "K" : shift = 10;
+            "M" : shift = 20;
+            "G" : shift = 30;
+            default : shift = 0;
+        }
+        strToMemSize = num << shift;
+    } else {
+        error("Invalid memory size %s!\n", str);
+    }
+}
+
+function string memSizeToStr(Qword value)
+{
+    string suffix;
+
+    if (value > 0 && (value & (GB(1) - 1)) == 0) {
+        suffix = "G";
+        value >>= 30;
+    }
+    else if (value > 0 && (value & (MB(1) - 1)) == 0) {
+        suffix = "M";
+        value >>= 20;
+    }
+    else if (value > 0 && (value & (KB(1) - 1)) == 0) {
+        suffix = "K";
+        value >>= 10;
+    }
+    else {
+        suffix = "B";
+    }
+
+    memSizeToStr = psprintf("%0d%s", value, suffix);
+}
+
+////////////////////////////////////////////////////////////
+// Math utilities
+////////////////////////////////////////////////////////////
+
+function bit isPowerOf2(Qword x)
+{
+    isPowerOf2 = ((x & -x) == x);
+}
+
+// returns the index of the highest (msb) bit set
+// Example log2(8'b0011_1100) = 5, log2(8'b0010_0000) = 5
+function integer log2(Qword x)
+{
+    log2 = -1;
+    while (x > 0) {
+        x >>= 1;
+        ++log2;
+    }
+}
+
+function integer bitCount(Qword x)
+{
+    bitCount = 0;
+    while (x != 0) {
+        bitCount += x & 1;
+        x >>= 1;
+    }
+}
+
+function Qword maskCompress(Qword orig, Qword mask)
+{
+    integer ip, op;
+
+    maskCompress = 0;
+    for (ip = 0, op = 0; ip < 64; ++ip) {
+        if (mask[ip]) maskCompress[op++] = orig[ip];
+    }
+}
+
+function Qword maskDecompress(Qword comp, Qword mask)
+{
+    integer ip, op;
+
+    maskDecompress = 0;
+    for (ip = 0, op = 0; op < 64; ++op) {
+        if (mask[op]) maskDecompress[op] = comp[ip++];
+    }
+}
+

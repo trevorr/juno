@@ -1,0 +1,300 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "log.vrh"
+#include "lineposstreams.vrh"
+
+////////////////////////////////////////////////////////////
+// ParseStream
+////////////////////////////////////////////////////////////
+
+#define PARSE_BUFFER_SIZE 64
+#define MAX_PARSE_PUSHBACK 32
+#define MAX_PARSE_FILL (PARSE_BUFFER_SIZE - MAX_PARSE_PUSHBACK)
+#define MAX_PARSE_GROUPS 4
+
+class ParseStream
+extends InputStream
+{
+    local LogInterface logIntf;
+
+    local LinePosInputStream stream;
+    local bit eof;
+
+    local string injectStr;
+    local integer injectLine;
+    local integer injectColumn;
+    local integer injectPos;
+
+    local integer buffer[PARSE_BUFFER_SIZE];
+    local integer lines[PARSE_BUFFER_SIZE];
+    local integer columns[PARSE_BUFFER_SIZE];
+    local integer count;
+    local integer readPos;
+    local integer writePos;
+
+    local integer groupPos[MAX_PARSE_GROUPS];
+    local integer groups;
+
+    local bit capturing;
+    local string capture;
+
+    task new(InputStream _stream)
+    {
+        logIntf = new("parsestream");
+        // by default, only log warnings and above (regardless of +log_level)
+        logIntf.setMinSeverity(LS_WARNING);
+        logIntf.loadSettings("parsestream");
+
+        stream = new(_stream);
+        eof = 0;
+        injectStr = null;
+        count = 0;
+        readPos = 0;
+        writePos = 0;
+        groups = 0;
+        capturing = 0;
+    }
+
+    function integer peek(integer distance = 0)
+    {
+        assert(distance < PARSE_BUFFER_SIZE);
+        if (count <= distance) fillBuffer();
+        if (count > distance) {
+            peek = buffer[advance(readPos, distance)];
+            LOG_MSG(logIntf, LS_DEBUG1, psprintf("peek(%0d) = '%s'", distance, peek))
+        } else {
+            peek = -1;
+            LOG_MSG(logIntf, LS_DEBUG1, psprintf("peek(%0d) = -1", distance))
+        }
+    }
+
+    function bit lookahead(string s, integer distance = 0)
+    {
+        integer len, i;
+
+        len = s.len();
+        for (i = 0; i < len; ++i) {
+            integer ch1 = s.getc(i);
+            integer ch2 = peek(i + distance);
+
+            if (ch1 != ch2) {
+                break;
+            }
+        }
+
+        lookahead = (i >= len);
+        LOG_MSG(logIntf, LS_DEBUG, psprintf("lookahead('%s', %0d) = %b",
+            s, distance, lookahead))
+    }
+
+    function integer read()
+    {
+        if (count == 0) fillBuffer();
+        if (count > 0) {
+            read = buffer[readPos];
+            if (capturing) {
+                string temp;
+
+                temp.bittostr(read);
+                capture = { capture, temp };
+            }
+            readPos = advance(readPos);
+            --count;
+            LOG_MSG(logIntf, LS_DEBUG, psprintf("read() = '%s'", read))
+        } else {
+            read = -1;
+            LOG_MSG(logIntf, LS_DEBUG, "read() = -1")
+        }
+    }
+
+    function string readString(integer len)
+    {
+        integer i;
+        string s;
+
+        for (i = 0; i < len; ++i) {
+            integer ch;
+            string temp;
+
+            ch = read();
+            if (ch == -1) break;
+            temp.bittostr(ch);
+            s = { s, temp };
+        }
+        if (capturing) {
+            capture = { capture, s };
+        }
+        readString = s;
+        LOG_MSG(logIntf, LS_DEBUG, psprintf("readString(%0d) = '%s'", len, s))
+    }
+
+    function integer getLineNumber()
+    {
+        getLineNumber = (count > 0) ? lines[readPos] : stream.getLineNumber();
+    }
+
+    function integer getColumnNumber()
+    {
+        getColumnNumber = (count > 0) ? columns[readPos] : stream.getColumnNumber();
+    }
+
+    task beginGroup()
+    {
+        assert(groups < MAX_PARSE_GROUPS);
+        groupPos[groups] = readPos;
+        ++groups;
+
+        LOG_MSG(logIntf, LS_DEBUG,
+            psprintf("beginGroup(): groups=%0d, readPos=%0d",
+            groups, readPos))
+    }
+
+    task endGroup(bit accept = 1)
+    {
+        assert(!capturing);
+        assert(groups > 0);
+        --groups;
+        if (!accept) {
+            integer savePos, delta;
+
+            savePos = groupPos[groups];
+            delta = readPos - savePos;
+            if (delta < 0) delta += PARSE_BUFFER_SIZE;
+            readPos = savePos;
+            count += delta;
+        }
+
+        LOG_MSG(logIntf, LS_DEBUG,
+            psprintf("endGroup(%b): groups=%0d, readPos=%0d",
+            accept, groups, readPos))
+    }
+
+    task beginCapture()
+    {
+        assert(!capturing);
+        capturing = 1;
+        capture = "";
+
+        LOG_MSG(logIntf, LS_DEBUG, "beginCapture()")
+    }
+
+    function string endCapture(bit accept = 1)
+    {
+        assert(capturing);
+        capturing = 0;
+        endCapture = accept ? capture : null;
+
+        LOG_MSG(logIntf, LS_DEBUG,
+            psprintf("endCapture(%b) = '%s'",
+            accept, endCapture))
+    }
+
+    task inject(string s)
+    {
+        LOG_MSG(logIntf, LS_DEBUG, psprintf("inject('%s')", s))
+
+        if (s != null && s.len() > 0) {
+            string temp;
+
+            injectLine = getLineNumber();
+            injectColumn = getColumnNumber();
+
+            // read existing buffer onto end of new string
+            while (count > 0) {
+                temp.bittostr(buffer[readPos]);
+                s = { s, temp };
+                readPos = advance(readPos);
+                --count;
+            }
+
+            // concatenate new string and unused existing injection string
+            if (injectStr != null) {
+                injectStr = { s, injectStr.substr(injectPos) };
+            } else {
+                injectStr = s;
+            }
+            LOG_MSG(logIntf, LS_DEBUG1, psprintf("injectStr = '%s'", injectStr))
+
+            // reset injection position
+            injectPos = 0;
+        }
+    }
+
+    task close()
+    {
+        stream.close();
+        injectStr = null;
+        eof = 1;
+        count = 0;
+    }
+
+    local function integer advance(integer ofs, integer distance = 1)
+    {
+        ofs += distance;
+        if (ofs >= PARSE_BUFFER_SIZE) ofs -= PARSE_BUFFER_SIZE;
+        advance = ofs;
+    }
+
+    local task fillBuffer()
+    {
+        integer injectCount;
+
+        injectCount = (injectStr != null) ? injectStr.len() - injectPos : 0;
+
+        LOG_MSG(logIntf, LS_DEBUG1,
+            psprintf("fillBuffer(): enter: eof=%b, injectCount=%0d, count=%0d, writePos=%0d",
+            eof, injectCount, count, writePos))
+
+        while (count < MAX_PARSE_FILL && (!eof || injectCount > 0)) {
+            integer ch;
+            integer line;
+            integer column;
+            string source;
+
+            if (injectCount > 0) {
+                source = "injection buffer";
+                line = injectLine;
+                column = injectColumn;
+                ch = injectStr.getc(injectPos++);
+                if (--injectCount == 0) {
+                    injectStr = null;
+                }
+            } else {
+                source = "underlying stream";
+                line = stream.getLineNumber();
+                column = stream.getColumnNumber();
+                ch = stream.read();
+            }
+            if (ch != -1) {
+                LOG_MSG(logIntf, LS_DEBUG2,
+                    psprintf("read from %s: ch='%s', line=%0d, column=%0d",
+                    source, ch, line, column))
+                lines[writePos] = line;
+                columns[writePos] = column;
+                buffer[writePos] = ch;
+                writePos = advance(writePos);
+                ++count;
+            } else {
+                eof = 1;
+            }
+        }
+
+        LOG_MSG(logIntf, LS_DEBUG1,
+            psprintf("fillBuffer(): exit: eof=%b, injectCount=%0d, count=%0d, writePos=%0d",
+            eof, injectCount, count, writePos))
+    }
+}
+

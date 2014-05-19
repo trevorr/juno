@@ -1,0 +1,401 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// LinkedList
+////////////////////////////////////////////////////////////
+
+typedef class LINKED_LIST_NODE_CLASS;
+typedef class LINKED_LIST_ITERATOR_CLASS;
+
+class LINKED_LIST_CLASS
+extends LIST_CLASS
+{
+    // For local use only!
+    LINKED_LIST_NODE_CLASS head;
+    LINKED_LIST_NODE_CLASS tail;
+    integer count;
+
+    // Collection
+    virtual task add(ELEMENT_TYPE o);
+    virtual task clear();
+    virtual function integer size();
+
+    // List
+    virtual task addAt(integer index, ELEMENT_TYPE o);
+    virtual task addFirst(ELEMENT_TYPE o);
+    virtual task addLast(ELEMENT_TYPE o);
+    virtual function ELEMENT_TYPE get(integer index);
+    virtual function ELEMENT_TYPE getFirst();
+    virtual function ELEMENT_TYPE getLast();
+    virtual function LIST_ITERATOR_CLASS listIteratorAt(integer index);
+    virtual task removeAt(integer index);
+    virtual task set(integer index, ELEMENT_TYPE o);
+
+    // LinkedList
+    task new();
+
+    // For local use only!
+    task addBeforeNode(LINKED_LIST_NODE_CLASS node, ELEMENT_TYPE o);
+    task removeNode(LINKED_LIST_NODE_CLASS node);
+}
+
+task LINKED_LIST_CLASS::add(ELEMENT_TYPE o)
+{
+    addLast(o);
+}
+
+task LINKED_LIST_CLASS::clear()
+{
+    LINKED_LIST_NODE_CLASS cur;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.clear()",
+        getObjectName()))
+
+    // break prev-references for garbage collection
+    cur = head;
+    while (cur != null) {
+        if (destroyOnRemove) {
+            ELEMENT_TYPE victim = cur.item;
+            DESTROY(victim);
+        }
+        cur.prev = null;
+        cur = cur.next;
+    }
+
+    head = null;
+    tail = null;
+    count = 0;
+}
+
+function integer LINKED_LIST_CLASS::size()
+{
+    size = count;
+}
+
+task LINKED_LIST_CLASS::addAt(integer index, ELEMENT_TYPE o)
+{
+    LIST_ITERATOR_CLASS li = listIteratorAt(index);
+
+    li.add(o);
+}
+
+task LINKED_LIST_CLASS::addFirst(ELEMENT_TYPE o)
+{
+    LINKED_LIST_NODE_CLASS newNode;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.addFirst(%s)",
+        getObjectName(), DUMP_STRING(o)))
+
+    newNode = new;
+    newNode.item = o;
+    if (head != null) {
+        newNode.next = head;
+        head.prev = newNode;
+    } else {
+        tail = newNode;
+    }
+    head = newNode;
+    ++count;
+}
+
+task LINKED_LIST_CLASS::addLast(ELEMENT_TYPE o)
+{
+    LINKED_LIST_NODE_CLASS newNode;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.addLast(%s)",
+        getObjectName(), DUMP_STRING(o)))
+
+    newNode = new;
+    newNode.item = o;
+    if (tail != null) {
+        newNode.prev = tail;
+        tail.next = newNode;
+    } else {
+        head = newNode;
+    }
+    tail = newNode;
+    ++count;
+}
+
+function ELEMENT_TYPE LINKED_LIST_CLASS::get(integer index)
+{
+    LIST_ITERATOR_CLASS li = listIteratorAt(index);
+
+    get = li.next();
+}
+
+function ELEMENT_TYPE LINKED_LIST_CLASS::getFirst()
+{
+    assert(count > 0);
+
+    getFirst = head.item;
+}
+
+function ELEMENT_TYPE LINKED_LIST_CLASS::getLast()
+{
+    assert(count > 0);
+
+    getLast = tail.item;
+}
+
+function LIST_ITERATOR_CLASS LINKED_LIST_CLASS::listIteratorAt(integer index)
+{
+    LINKED_LIST_ITERATOR_CLASS lli = new(this, index);
+
+    listIteratorAt = lli;
+}
+
+task LINKED_LIST_CLASS::removeAt(integer index)
+{
+    LIST_ITERATOR_CLASS li = listIteratorAt(index);
+
+    void = li.next();
+    li.remove();
+}
+
+task LINKED_LIST_CLASS::set(integer index, ELEMENT_TYPE o)
+{
+    LIST_ITERATOR_CLASS li = listIteratorAt(index);
+
+    void = li.next();
+    li.set(o);
+}
+
+task LINKED_LIST_CLASS::new()
+{
+    setClassName("LinkedList");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new()",
+        getObjectName()))
+
+    count = 0;
+}
+
+task LINKED_LIST_CLASS::addBeforeNode(LINKED_LIST_NODE_CLASS node, ELEMENT_TYPE o)
+{
+    LINKED_LIST_NODE_CLASS newNode;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.addBeforeNode(%s, %s)",
+        getObjectName(), OBJECT_DUMP_STRING(node), DUMP_STRING(o)))
+
+    newNode = new;
+    newNode.item = o;
+    if (node != null) {
+        newNode.next = node;
+        newNode.prev = node.prev;
+        node.prev = newNode;
+        if (newNode.prev != null) {
+            newNode.prev.next = newNode;
+        } else {
+            head = newNode;
+        }
+    } else {
+        if (tail != null) {
+            newNode.prev = tail;
+            tail.next = newNode;
+        } else {
+            head = newNode;
+        }
+        tail = newNode;
+    }
+    ++count;
+}
+
+task LINKED_LIST_CLASS::removeNode(LINKED_LIST_NODE_CLASS node)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.removeNode(%s)",
+        getObjectName(), OBJECT_DUMP_STRING(node)))
+
+    assert(node != null);
+
+    if (node.prev != null) {
+        node.prev.next = node.next;
+    } else {
+        head = node.next;
+    }
+    if (node.next != null) {
+        node.next.prev = node.prev;
+    } else {
+        tail = node.prev;
+    }
+    --count;
+
+    if (destroyOnRemove) {
+        ELEMENT_TYPE victim = node.item;
+        DESTROY(victim);
+    }
+
+    // break references for garbage collection
+    node.next = null;
+    node.prev = null;
+}
+
+////////////////////////////////////////////////////////////
+// LinkedListIterator
+////////////////////////////////////////////////////////////
+
+local class LINKED_LIST_ITERATOR_CLASS
+extends LIST_ITERATOR_CLASS
+{
+    local LINKED_LIST_CLASS list;
+    local LINKED_LIST_NODE_CLASS curNode;
+    local integer curIndex;
+    local LINKED_LIST_NODE_CLASS lastNode;
+
+    task new(LINKED_LIST_CLASS _list, integer index = 0);
+
+    virtual task add(ELEMENT_TYPE o);
+    virtual function bit hasNext();
+    virtual function bit hasPrevious();
+    virtual function ELEMENT_TYPE next();
+    virtual function integer nextIndex();
+    virtual function ELEMENT_TYPE previous();
+    virtual function integer previousIndex();
+    virtual task remove();
+    virtual task set(ELEMENT_TYPE o);
+
+    local task checkLast();
+}
+
+task LINKED_LIST_ITERATOR_CLASS::new(LINKED_LIST_CLASS _list, integer index = 0)
+{
+    integer size;
+
+    setClassName("LinkedListIterator");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new(%s, %0d)",
+        getObjectName(), OBJECT_NAME(_list), index))
+
+    list = _list;
+
+    size = list.count;
+
+    assert(index >= 0 && index <= size);
+
+    if (index < (size >> 1)) {
+        curNode = list.head;
+        for (curIndex = 0; curIndex < index; ++curIndex) {
+            curNode = curNode.next;
+        }
+    }
+    else if (index < size) {
+        curNode = list.tail;
+        for (curIndex = size - 1; curIndex > index; --curIndex) {
+            curNode = curNode.prev;
+        }
+    }
+    else {
+        curNode = null;
+        curIndex = size;
+    }
+}
+
+task LINKED_LIST_ITERATOR_CLASS::add(ELEMENT_TYPE o)
+{
+    list.addBeforeNode(curNode, o);
+    ++curIndex;
+    lastNode = null;
+}
+
+function bit LINKED_LIST_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (curIndex < list.count);
+}
+
+function bit LINKED_LIST_ITERATOR_CLASS::hasPrevious()
+{
+    hasPrevious = (curIndex > 0);
+}
+
+function ELEMENT_TYPE LINKED_LIST_ITERATOR_CLASS::next()
+{
+    assert(curIndex < list.count);
+
+    lastNode = curNode;
+    curNode = curNode.next;
+    ++curIndex;
+    next = lastNode.item;
+}
+
+function integer LINKED_LIST_ITERATOR_CLASS::nextIndex()
+{
+    nextIndex = curIndex;
+}
+
+function ELEMENT_TYPE LINKED_LIST_ITERATOR_CLASS::previous()
+{
+    assert(curIndex > 0);
+
+    if (curNode != null) {
+        curNode = curNode.prev;
+    } else {
+        curNode = list.tail;
+    }
+    lastNode = curNode;
+    --curIndex;
+    previous = lastNode.item;
+}
+
+function integer LINKED_LIST_ITERATOR_CLASS::previousIndex()
+{
+    previousIndex = curIndex - 1;
+}
+
+task LINKED_LIST_ITERATOR_CLASS::remove()
+{
+    checkLast();
+    if (curNode == lastNode) {
+        curNode = curNode.next;
+    } else {
+        --curIndex;
+    }
+    list.removeNode(lastNode);
+    lastNode = null;
+}
+
+task LINKED_LIST_ITERATOR_CLASS::set(ELEMENT_TYPE o)
+{
+    checkLast();
+    if (list.isDestroyOnRemove()) {
+        ELEMENT_TYPE victim = lastNode.item;
+        DESTROY(victim);
+    }
+    lastNode.item = o;
+}
+
+task LINKED_LIST_ITERATOR_CLASS::checkLast()
+{
+    if (lastNode == null) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+}
+
+////////////////////////////////////////////////////////////
+// LinkedListNode
+////////////////////////////////////////////////////////////
+
+class LINKED_LIST_NODE_CLASS
+{
+    ELEMENT_TYPE item;
+    LINKED_LIST_NODE_CLASS prev;
+    LINKED_LIST_NODE_CLASS next;
+
+    function string dumpString()
+    {
+        dumpString = psprintf("LinkedListNode[item=%s]", DUMP_STRING(item));
+    }
+}
+

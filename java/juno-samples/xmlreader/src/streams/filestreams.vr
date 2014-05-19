@@ -1,0 +1,151 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "streams.vrh"
+
+////////////////////////////////////////////////////////////
+// FileInputStream
+////////////////////////////////////////////////////////////
+
+class FileInputStream
+extends InputStream
+{
+    local string filename;
+    local integer fd;
+    local string buffer;
+    local integer len;
+    local integer pos;
+    local string eol;
+
+    task new(string _filename)
+    {
+        filename = _filename;
+        if (filename == "stdin") {
+            fd = stdin;
+        } else {
+            fd = fopen(filename, "r");
+            if (!fd) {
+                error("Error opening file: %s\n", filename);
+            }
+        }
+        len = 0;
+        pos = 0;
+        eol.bittostr(8'h0A);
+    }
+
+    function string getFilename()
+    {
+        getFilename = filename;
+    }
+
+    local task fillBuffer()
+    {
+        assert(fd);
+        buffer = freadstr(fd, RAWIN);
+        if (buffer != null) {
+            buffer = { buffer, eol };
+            len = buffer.len();
+        } else {
+            len = -1;
+        }
+        pos = 0;
+    }
+
+    virtual function integer read()
+    {
+        if (pos == len) fillBuffer();
+        if (pos < len) {
+            read = buffer.getc(pos);
+            ++pos;
+        } else {
+            read = -1;
+        }
+    }
+
+    virtual function string readLine()
+    {
+        if (pos == len) fillBuffer();
+        if (pos < len) {
+            readLine = buffer.substr(pos);
+            pos = len;
+        } else {
+            readLine = null;
+        }
+    }
+
+    virtual task close()
+    {
+        if (fd) {
+            fclose(fd);
+            fd = 0;
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// FileOutputStream
+////////////////////////////////////////////////////////////
+
+class FileOutputStream
+extends OutputStream
+{
+    local string filename;
+    local integer fd;
+
+    task new(string _filename, string _mode = "w")
+    {
+        filename = _filename;
+        if (filename == "stdout") {
+            fd = stdout;
+        } else {
+            fd = fopen(filename, _mode);
+            if (!fd) {
+                error("Error opening file: %s\n", filename);
+            }
+        }
+    }
+
+    function string getFilename()
+    {
+        getFilename = filename;
+    }
+
+    virtual task write(integer b)
+    {
+        assert(fd);
+        fprintf(fd, "%s", b);
+    }
+
+    virtual task writeLine(string s)
+    {
+        assert(fd);
+        fprintf(fd, "%s\n", s);
+    }
+
+    virtual task flush()
+    {
+        assert(fd);
+        fflush(fd);
+    }
+
+    virtual task close()
+    {
+        if (fd) {
+            fclose(fd);
+            fd = 0;
+        }
+    }
+}
+

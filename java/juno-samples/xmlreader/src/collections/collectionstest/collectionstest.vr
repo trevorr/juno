@@ -1,0 +1,664 @@
+#include <VeraListProgram.vrh>
+#include "arraylist.vrh"
+#include "linkedlist.vrh"
+#include "strarraylist.vrh"
+#include "strlinkedlist.vrh"
+#include "intarraylist.vrh"
+#include "intlinkedlist.vrh"
+#include "hashmap.vrh"
+#include "linkedhashmap.vrh"
+#include "treemap.vrh"
+#include "strhashmap.vrh"
+#include "strlinkedhashmap.vrh"
+#include "strtreemap.vrh"
+#include "hashset.vrh"
+#include "treeset.vrh"
+#include "strhashset.vrh"
+#include "strtreeset.vrh"
+#include "intassocarraymap.vrh"
+
+class MyClass
+extends Object
+{
+    local string name;
+
+    task new(string _name)
+    {
+        name = _name;
+    }
+
+    virtual function string dumpString()
+    {
+        dumpString = name;
+    }
+}
+
+task testLists(List list1, List list2)
+{
+    MyClass o1, o2, o3;
+
+    o1 = new("o1");
+    o2 = new("o2");
+    o3 = new("o3");
+
+    printf("list1 = %s (hashCode = %0d)\n", list1.dumpString(), list1.hashCode());
+    printf("list2 = %s (hashCode = %0d)\n", list2.dumpString(), list2.hashCode());
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list1.add(o1);\n");
+    list1.add(o1);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("> list1.add(o2);\n");
+    list1.add(o2);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("> list1.add(o1);\n");
+    list1.add(o1);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("list1.contains(o1) = %b\n", list1.contains(o1));
+    printf("list1.contains(o2) = %b\n", list1.contains(o2));
+    printf("list1.contains(o3) = %b\n", list1.contains(o3));
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list2.addAll(list1);\n");
+    list2.addAll(list1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("list1.equals(list2) = %b\n", list1.equals(list2));
+    printf("list2.containsAll(list1) = %b\n\n", list2.containsAll(list1));
+
+    printf("> list2.remove(o2);\n");
+    list2.remove(o2);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("list2.containsAll(list1) = %b\n", list2.containsAll(list1));
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list1.retainAll(list2);\n");
+    list1.retainAll(list2);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list2.remove(o1);\n");
+    list2.remove(o1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("> list2.remove(o1);\n");
+    list2.remove(o1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    list1.clear();
+    list2.clear();
+}
+
+task testStrLists(StrList list1, StrList list2)
+{
+    string o1, o2, o3;
+
+    o1 = "s1";
+    o2 = "s2";
+    o3 = "s3";
+
+    printf("list1 = %s (hashCode = %0d)\n", list1.dumpString(), list1.hashCode());
+    printf("list2 = %s (hashCode = %0d)\n", list2.dumpString(), list2.hashCode());
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list1.add(o1);\n");
+    list1.add(o1);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("> list1.add(o2);\n");
+    list1.add(o2);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("> list1.add(o1);\n");
+    list1.add(o1);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("list1.contains(o1) = %b\n", list1.contains(o1));
+    printf("list1.contains(o2) = %b\n", list1.contains(o2));
+    printf("list1.contains(o3) = %b\n", list1.contains(o3));
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list2.addAll(list1);\n");
+    list2.addAll(list1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("list1.equals(list2) = %b\n", list1.equals(list2));
+    printf("list2.containsAll(list1) = %b\n\n", list2.containsAll(list1));
+
+    printf("> list2.remove(o2);\n");
+    list2.remove(o2);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("list2.containsAll(list1) = %b\n", list2.containsAll(list1));
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list1.retainAll(list2);\n");
+    list1.retainAll(list2);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list2.remove(o1);\n");
+    list2.remove(o1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("> list2.remove(o1);\n");
+    list2.remove(o1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    list1.clear();
+    list2.clear();
+}
+
+task testIntLists(IntList list1, IntList list2)
+{
+    integer o1, o2, o3;
+
+    o1 = 1;
+    o2 = 2;
+    o3 = 3;
+
+    printf("list1 = %s (hashCode = %0d)\n", list1.dumpString(), list1.hashCode());
+    printf("list2 = %s (hashCode = %0d)\n", list2.dumpString(), list2.hashCode());
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list1.add(o1);\n");
+    list1.add(o1);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("> list1.add(o2);\n");
+    list1.add(o2);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("> list1.add(o1);\n");
+    list1.add(o1);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("list1.contains(o1) = %b\n", list1.contains(o1));
+    printf("list1.contains(o2) = %b\n", list1.contains(o2));
+    printf("list1.contains(o3) = %b\n", list1.contains(o3));
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list2.addAll(list1);\n");
+    list2.addAll(list1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("list1.equals(list2) = %b\n", list1.equals(list2));
+    printf("list2.containsAll(list1) = %b\n\n", list2.containsAll(list1));
+
+    printf("> list2.remove(o2);\n");
+    list2.remove(o2);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("list2.containsAll(list1) = %b\n", list2.containsAll(list1));
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list1.retainAll(list2);\n");
+    list1.retainAll(list2);
+    printf("list1 = %s (hashCode = %0d)\n\n", list1.dumpString(), list1.hashCode());
+
+    printf("list1.equals(list2) = %b\n\n", list1.equals(list2));
+
+    printf("> list2.remove(o1);\n");
+    list2.remove(o1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    printf("> list2.remove(o1);\n");
+    list2.remove(o1);
+    printf("list2 = %s (hashCode = %0d)\n\n", list2.dumpString(), list2.hashCode());
+
+    list1.clear();
+    list2.clear();
+}
+
+task testMap(Map map)
+{
+    MyClass k1, k2, k3, va, vb, vc;
+    Set keySet;
+    Collection values;
+    SortedMap sortedMap;
+    SortedMap subMap;
+    Set subMapKeySet;
+    Collection subMapValues;
+
+    k1 = new("Key 1");
+    k2 = new("Key 2");
+    k3 = new("Key 3");
+    va = new("Value A");
+    vb = new("Value B");
+    vc = new("Value C");
+
+    keySet = map.keySet();
+    values = map.values();
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k2, vb);\n");
+    map.put(k2, vb);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k3, vc);\n");
+    map.put(k3, vc);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k1, va);\n");
+    map.put(k1, va);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k2, va);\n");
+    map.put(k2, va);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    if (cast_assign(sortedMap, map, CHECK)) {
+        Object fk, lk;
+
+        fk = sortedMap.firstKey();
+        lk = sortedMap.lastKey();
+        printf("map.firstKey() = %s, map.lastKey() = %s\n\n",
+            fk.dumpString(), lk.dumpString());
+
+        printf("> subMap = map.subMap(k1, k3);\n");
+        subMap = sortedMap.subMap(k1, k3);
+        subMapKeySet = subMap.keySet();
+        subMapValues = subMap.values();
+        printf("subMap = %s, keys = %s, values = %s\n\n",
+            subMap.dumpString(), subMapKeySet.dumpString(), subMapValues.dumpString());
+    }
+
+    printf("> map.remove(k2);\n");
+    map.remove(k2);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.remove(k1);\n");
+    map.remove(k1);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    if (subMap != null) {
+        printf("subMap = %s, keys = %s, values = %s\n\n",
+            subMap.dumpString(), subMapKeySet.dumpString(), subMapValues.dumpString());
+    }
+
+    map.clear();
+}
+
+task testStrMap(StrMap map)
+{
+    string k1, k2, k3;
+    MyClass va, vb, vc;
+    StrSet keySet;
+    Collection values;
+    StrSortedMap sortedMap;
+    StrSortedMap subMap;
+    StrSet subMapKeySet;
+    Collection subMapValues;
+
+    k1 = "Key 1";
+    k2 = "Key 2";
+    k3 = "Key 3";
+    va = new("Value A");
+    vb = new("Value B");
+    vc = new("Value C");
+
+    keySet = map.keySet();
+    values = map.values();
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k2, vb);\n");
+    map.put(k2, vb);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k3, vc);\n");
+    map.put(k3, vc);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k1, va);\n");
+    map.put(k1, va);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k2, va);\n");
+    map.put(k2, va);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    if (cast_assign(sortedMap, map, CHECK)) {
+        printf("map.firstKey() = %s, map.lastKey() = %s\n\n",
+            sortedMap.firstKey(), sortedMap.lastKey());
+
+        printf("> subMap = map.subMap(k1, k3);\n");
+        subMap = sortedMap.subMap(k1, k3);
+        subMapKeySet = subMap.keySet();
+        subMapValues = subMap.values();
+        printf("subMap = %s, keys = %s, values = %s\n\n",
+            subMap.dumpString(), subMapKeySet.dumpString(), subMapValues.dumpString());
+    }
+
+    printf("> map.remove(k2);\n");
+    map.remove(k2);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.remove(k1);\n");
+    map.remove(k1);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    if (subMap != null) {
+        printf("subMap = %s, keys = %s, values = %s\n\n",
+            subMap.dumpString(), subMapKeySet.dumpString(), subMapValues.dumpString());
+    }
+
+    map.clear();
+}
+
+task testIntMap(IntMap map)
+{
+    integer k1, k2, k3;
+    MyClass va, vb, vc;
+    IntSet keySet;
+    Collection values;
+    IntSortedMap sortedMap;
+    IntSortedMap subMap;
+    IntSet subMapKeySet;
+    Collection subMapValues;
+
+    k1 = 1;
+    k2 = 2;
+    k3 = 3;
+    va = new("Value A");
+    vb = new("Value B");
+    vc = new("Value C");
+
+    keySet = map.keySet();
+    values = map.values();
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k2, vb);\n");
+    map.put(k2, vb);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k3, vc);\n");
+    map.put(k3, vc);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k1, va);\n");
+    map.put(k1, va);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.put(k2, va);\n");
+    map.put(k2, va);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    if (cast_assign(sortedMap, map, CHECK)) {
+        printf("map.firstKey() = %0d, map.lastKey() = %0d\n\n",
+            sortedMap.firstKey(), sortedMap.lastKey());
+
+        printf("> subMap = map.subMap(k1, k3);\n");
+        subMap = sortedMap.subMap(k1, k3);
+        subMapKeySet = subMap.keySet();
+        subMapValues = subMap.values();
+        printf("subMap = %s, keys = %s, values = %s\n\n",
+            subMap.dumpString(), subMapKeySet.dumpString(), subMapValues.dumpString());
+    }
+
+    printf("> map.remove(k2);\n");
+    map.remove(k2);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    printf("> map.remove(k1);\n");
+    map.remove(k1);
+    printf("map = %s, keys = %s, values = %s\n\n",
+        map.dumpString(), keySet.dumpString(), values.dumpString());
+
+    if (subMap != null) {
+        printf("subMap = %s, keys = %s, values = %s\n\n",
+            subMap.dumpString(), subMapKeySet.dumpString(), subMapValues.dumpString());
+    }
+
+    map.clear();
+}
+
+task testSet(Set set)
+{
+    MyClass o1, o2, o3;
+
+    o1 = new("o1");
+    o2 = new("o2");
+    o3 = new("o3");
+
+    printf("> set.add(o2);\n");
+    set.add(o2);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.add(o1);\n");
+    set.add(o1);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.add(o3);\n");
+    set.add(o3);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.remove(o2);\n");
+    set.remove(o2);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.add(o2);\n");
+    set.add(o2);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    set.clear();
+}
+
+task testStrSet(StrSet set)
+{
+    string o1, o2, o3;
+
+    o1 = "s1";
+    o2 = "s2";
+    o3 = "s3";
+
+    printf("> set.add(o2);\n");
+    set.add(o2);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.add(o1);\n");
+    set.add(o1);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.add(o3);\n");
+    set.add(o3);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.remove(o2);\n");
+    set.remove(o2);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    printf("> set.add(o2);\n");
+    set.add(o2);
+    printf("set = %s (hashCode = %0d)\n\n", set.dumpString(), set.hashCode());
+
+    set.clear();
+}
+
+program main
+{
+    {
+        ArrayList list1, list2;
+
+        list1 = new;
+        list2 = new;
+
+        printf("========== ArrayList:\n\n");
+        testLists(list1, list2);
+    }
+
+    {
+        LinkedList list1, list2;
+
+        list1 = new;
+        list2 = new;
+
+        printf("========== LinkedList:\n\n");
+        testLists(list1, list2);
+    }
+
+    {
+        StrArrayList list1, list2;
+
+        list1 = new;
+        list2 = new;
+
+        printf("========== StrArrayList:\n\n");
+        testStrLists(list1, list2);
+    }
+
+    {
+        StrLinkedList list1, list2;
+
+        list1 = new;
+        list2 = new;
+
+        printf("========== StrLinkedList:\n\n");
+        testStrLists(list1, list2);
+    }
+
+    {
+        IntArrayList list1, list2;
+
+        list1 = new;
+        list2 = new;
+
+        printf("========== IntArrayList:\n\n");
+        testIntLists(list1, list2);
+    }
+
+    {
+        IntLinkedList list1, list2;
+
+        list1 = new;
+        list2 = new;
+
+        printf("========== IntLinkedList:\n\n");
+        testIntLists(list1, list2);
+    }
+
+    {
+        HashMap map;
+
+        map = new;
+
+        printf("========== HashMap:\n\n");
+        testMap(map);
+    }
+
+    {
+        LinkedHashMap map;
+
+        map = new;
+
+        printf("========== LinkedHashMap:\n\n");
+        testMap(map);
+    }
+
+    {
+        TreeMap map;
+
+        map = new;
+
+        printf("========== TreeMap:\n\n");
+        testMap(map);
+    }
+
+    {
+        StrHashMap map;
+
+        map = new;
+
+        printf("========== StrHashMap:\n\n");
+        testStrMap(map);
+    }
+
+    {
+        StrLinkedHashMap map;
+
+        map = new;
+
+        printf("========== StrLinkedHashMap:\n\n");
+        testStrMap(map);
+    }
+
+    {
+        StrTreeMap map;
+
+        map = new;
+
+        printf("========== StrTreeMap:\n\n");
+        testStrMap(map);
+    }
+
+    {
+        HashSet set;
+
+        set = new;
+
+        printf("========== HashSet:\n\n");
+        testSet(set);
+    }
+
+    {
+        TreeSet set;
+
+        set = new;
+
+        printf("========== TreeSet:\n\n");
+        testSet(set);
+    }
+
+    {
+        StrHashSet set;
+
+        set = new;
+
+        printf("========== StrHashSet:\n\n");
+        testStrSet(set);
+    }
+
+    {
+        StrTreeSet set;
+
+        set = new;
+
+        printf("========== StrTreeSet:\n\n");
+        testStrSet(set);
+    }
+
+    {
+        IntAssocArrayMap map;
+
+        map = new;
+
+        printf("========== IntAssocArrayMap:\n\n");
+        testIntMap(map);
+    }
+}
+

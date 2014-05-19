@@ -1,0 +1,1206 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// TreeMap
+////////////////////////////////////////////////////////////
+
+#define BLACK 0
+#define RED 1
+
+typedef class TREE_MAP_ENTRY_CLASS;
+typedef class TREE_MAP_ENTRY_SET_CLASS;
+typedef class TREE_MAP_KEY_SET_CLASS;
+typedef class TREE_MAP_VALUE_COLLECTION_CLASS;
+typedef class TREE_MAP_SUB_MAP_CLASS;
+
+class TREE_MAP_CLASS
+extends SORTED_MAP_CLASS
+{
+    // For local use only!
+    KEY_COMPARATOR_CLASS keyComp;
+    TREE_MAP_ENTRY_CLASS root;
+    integer count;
+
+    // Map
+    virtual task clear();
+    virtual function Set entrySet();
+    virtual function MAP_ENTRY_CLASS findKey(KEY_TYPE key);
+    virtual function KEY_SET_CLASS keySet();
+    virtual task put(KEY_TYPE key, VALUE_TYPE value);
+    virtual task remove(KEY_TYPE key);
+    virtual function integer size();
+    virtual function VALUE_COLLECTION_CLASS values();
+
+    // SortedMap
+    virtual function KEY_COMPARATOR_CLASS comparator();
+    virtual function KEY_TYPE firstKey();
+    virtual function KEY_TYPE lastKey();
+    virtual function SORTED_MAP_CLASS subMap(KEY_TYPE fromKey, KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS headMap(KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS tailMap(KEY_TYPE fromKey);
+
+    // TreeMap
+    task new(KEY_COMPARATOR_CLASS _keyComp = null);
+
+    // For local use only!
+    function TREE_MAP_ENTRY_CLASS firstEntry();
+    function TREE_MAP_ENTRY_CLASS lastEntry();
+    function TREE_MAP_ENTRY_CLASS predecessor(TREE_MAP_ENTRY_CLASS entry);
+    function TREE_MAP_ENTRY_CLASS successor(TREE_MAP_ENTRY_CLASS entry);
+    function TREE_MAP_ENTRY_CLASS findEntryLT(KEY_TYPE key);
+    function TREE_MAP_ENTRY_CLASS findEntryGE(KEY_TYPE key);
+    task removeEntry(TREE_MAP_ENTRY_CLASS entry);
+
+    local task rotateLeft(TREE_MAP_ENTRY_CLASS entry);
+    local task rotateRight(TREE_MAP_ENTRY_CLASS entry);
+    local task fixAfterInsert(TREE_MAP_ENTRY_CLASS entry);
+    local task fixAfterDelete(TREE_MAP_ENTRY_CLASS entry);
+}
+
+task TREE_MAP_CLASS::clear()
+{
+    TREE_MAP_ENTRY_CLASS cur;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.clear()",
+        getObjectName()))
+
+    // break references for garbage collection
+    cur = root;
+    while (cur != null) {
+        if (destroyKeyOnRemove) {
+            cur.destroyKey();
+        }
+        if (destroyValueOnRemove) {
+            cur.destroyValue();
+        }
+
+        if (cur.left != null) {
+            cur = cur.left;
+        }
+        else if (cur.right != null) {
+            cur = cur.right;
+        }
+        else {
+            TREE_MAP_ENTRY_CLASS parent = cur.parent;
+
+            if (parent == null) {
+                root = null;
+            }
+            else if (parent.left == cur) {
+                parent.left = null;
+            }
+            else {
+                parent.right = null;
+            }
+            cur.parent = null;
+
+            cur = parent;
+        }
+    }
+
+    count = 0;
+}
+
+function Set TREE_MAP_CLASS::entrySet()
+{
+    TREE_MAP_ENTRY_SET_CLASS treeMapEntrySet = new(this);
+    entrySet = treeMapEntrySet;
+}
+
+function MAP_ENTRY_CLASS TREE_MAP_CLASS::findKey(KEY_TYPE key)
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    entry = root;
+    while (entry != null) {
+        integer res;
+
+        res = keyComp.compare(key, entry.key);
+        if (res == 0) {
+            break;
+        }
+        else if (res < 0) {
+            entry = entry.left;
+        }
+        else {
+            entry = entry.right;
+        }
+    }
+
+    findKey = entry;
+}
+
+function KEY_SET_CLASS TREE_MAP_CLASS::keySet()
+{
+    TREE_MAP_KEY_SET_CLASS treeMapKeySet = new(this);
+    keySet = treeMapKeySet;
+}
+
+task TREE_MAP_CLASS::put(KEY_TYPE key, VALUE_TYPE value)
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.put(%s, %s)",
+        getObjectName(), KEY_DUMP_STRING(key), VALUE_DUMP_STRING(value)))
+
+    if (root == null) {
+        root = new(key, value, null);
+        ++count;
+    }
+
+    entry = root;
+    while (entry != null) {
+        integer res;
+
+        res = keyComp.compare(key, entry.key);
+        if (res == 0) {
+            if (destroyValueOnRemove) {
+                VALUE_TYPE victim = entry.value;
+                VALUE_DESTROY(victim);
+            }
+            entry.value = value;
+            break;
+        }
+        else if (res < 0) {
+            if (entry.left != null) {
+                entry = entry.left;
+            }
+            else {
+                entry.left = new(key, value, entry);
+                ++count;
+
+                fixAfterInsert(entry.left);
+                break;
+            }
+        }
+        else {
+            if (entry.right != null) {
+                entry = entry.right;
+            }
+            else {
+                entry.right = new(key, value, entry);
+                ++count;
+
+                fixAfterInsert(entry.right);
+                break;
+            }
+        }
+    }
+}
+
+task TREE_MAP_CLASS::remove(KEY_TYPE key)
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.remove(%s)",
+        getObjectName(), KEY_DUMP_STRING(key)))
+
+    cast_assign(entry, findKey(key));
+    if (entry != null) {
+        removeEntry(entry);
+    }
+}
+
+function integer TREE_MAP_CLASS::size()
+{
+    size = count;
+}
+
+function VALUE_COLLECTION_CLASS TREE_MAP_CLASS::values()
+{
+    TREE_MAP_VALUE_COLLECTION_CLASS treeMapValues = new(this);
+    values = treeMapValues;
+}
+
+function KEY_COMPARATOR_CLASS TREE_MAP_CLASS::comparator()
+{
+    comparator = keyComp;
+}
+
+function KEY_TYPE TREE_MAP_CLASS::firstKey()
+{
+    TREE_MAP_ENTRY_CLASS entry = firstEntry();
+
+    assert(entry != null);
+
+    firstKey = entry.key;
+}
+
+function KEY_TYPE TREE_MAP_CLASS::lastKey()
+{
+    TREE_MAP_ENTRY_CLASS entry = lastEntry();
+
+    assert(entry != null);
+
+    lastKey = entry.key;
+}
+
+function SORTED_MAP_CLASS TREE_MAP_CLASS::subMap(KEY_TYPE fromKey, KEY_TYPE toKey)
+{
+    TREE_MAP_SUB_MAP_CLASS theSubMap = new(this, fromKey, 1, toKey, 1);
+
+    subMap = theSubMap;
+}
+
+function SORTED_MAP_CLASS TREE_MAP_CLASS::headMap(KEY_TYPE toKey)
+{
+    TREE_MAP_SUB_MAP_CLASS theSubMap = new(this, KEY_NULL, 0, toKey, 1);
+
+    headMap = theSubMap;
+}
+
+function SORTED_MAP_CLASS TREE_MAP_CLASS::tailMap(KEY_TYPE fromKey)
+{
+    TREE_MAP_SUB_MAP_CLASS theSubMap = new(this, fromKey, 1, KEY_NULL, 0);
+
+    tailMap = theSubMap;
+}
+
+task TREE_MAP_CLASS::new(KEY_COMPARATOR_CLASS _keyComp = null)
+{
+    setClassName("TreeMap");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new(%s)",
+        getObjectName(), OBJECT_NAME(_keyComp)))
+
+    if (_keyComp == null) {
+        DEFAULT_KEY_COMPARATOR_CLASS defKeyComp = new;
+        _keyComp = defKeyComp;
+    }
+
+    keyComp = _keyComp;
+    count = 0;
+}
+
+function TREE_MAP_ENTRY_CLASS TREE_MAP_CLASS::firstEntry()
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    entry = root;
+    if (entry != null) {
+        while (entry.left != null) {
+            entry = entry.left;
+        }
+    }
+
+    firstEntry = entry;
+}
+
+function TREE_MAP_ENTRY_CLASS TREE_MAP_CLASS::lastEntry()
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    entry = root;
+    if (entry != null) {
+        while (entry.right != null) {
+            entry = entry.right;
+        }
+    }
+
+    lastEntry = entry;
+}
+
+function TREE_MAP_ENTRY_CLASS TREE_MAP_CLASS::predecessor(TREE_MAP_ENTRY_CLASS entry)
+{
+    if (entry.left != null) {
+        // predecessor is left child's leftmost descendent
+        entry = entry.left;
+        while (entry.right != null) {
+            entry = entry.right;
+        }
+    }
+    else {
+        TREE_MAP_ENTRY_CLASS child;
+
+        // predecessor is first ancestor of which we are a right descendent
+        child = entry;
+        entry = entry.parent;
+        while (entry != null && child == entry.left) {
+            child = entry;
+            entry = entry.parent;
+        }
+    }
+
+    predecessor = entry;
+}
+
+function TREE_MAP_ENTRY_CLASS TREE_MAP_CLASS::successor(TREE_MAP_ENTRY_CLASS entry)
+{
+    if (entry.right != null) {
+        // successor is right child's leftmost descendent
+        entry = entry.right;
+        while (entry.left != null) {
+            entry = entry.left;
+        }
+    }
+    else {
+        TREE_MAP_ENTRY_CLASS child;
+
+        // successor is first ancestor of which we are a left descendent
+        child = entry;
+        entry = entry.parent;
+        while (entry != null && child == entry.right) {
+            child = entry;
+            entry = entry.parent;
+        }
+    }
+
+    successor = entry;
+}
+
+function TREE_MAP_ENTRY_CLASS TREE_MAP_CLASS::findEntryLT(KEY_TYPE key)
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    entry = root;
+    while (entry != null) {
+        integer res;
+
+        res = keyComp.compare(key, entry.key);
+        if (res <= 0) {
+            if (entry.left != null) {
+                entry = entry.left;
+            } else {
+                entry = predecessor(entry);
+                break;
+            }
+        }
+        else {
+            if (entry.right != null) {
+                entry = entry.right;
+            } else {
+                break;
+            }
+        }
+    }
+
+    findEntryLT = entry;
+}
+
+function TREE_MAP_ENTRY_CLASS TREE_MAP_CLASS::findEntryGE(KEY_TYPE key)
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    entry = root;
+    while (entry != null) {
+        integer res;
+
+        res = keyComp.compare(key, entry.key);
+        if (res == 0) {
+            break;
+        }
+        else if (res < 0) {
+            if (entry.left != null) {
+                entry = entry.left;
+            } else {
+                break;
+            }
+        }
+        else {
+            if (entry.right != null) {
+                entry = entry.right;
+            } else {
+                entry = successor(entry);
+                break;
+            }
+        }
+    }
+
+    findEntryGE = entry;
+}
+
+task TREE_MAP_CLASS::removeEntry(TREE_MAP_ENTRY_CLASS entry)
+{
+    TREE_MAP_ENTRY_CLASS repl;
+
+    if (destroyKeyOnRemove) {
+        entry.destroyKey();
+    }
+    if (destroyValueOnRemove) {
+        entry.destroyValue();
+    }
+
+    --count;
+
+    // if node is internal, copy successor to node and remove successor
+    // (since successor of internal node has at most a right child)
+    if (entry.left != null && entry.right != null) {
+        TREE_MAP_ENTRY_CLASS succ;
+
+        succ = successor(entry);
+        entry.key = succ.key;
+        entry.value = succ.value;
+        entry = succ;
+    }
+
+    // select replacement node (entry now has at most one child)
+    if (entry.left != null) {
+        repl = entry.left;
+
+        // break reference for garbage collection
+        entry.left = null;
+    } else {
+        repl = entry.right;
+
+        // break reference for garbage collection
+        entry.right = null;
+    }
+
+    if (repl != null) {
+        // link replacement to parent
+        repl.parent = entry.parent;
+        if (entry.parent == null) {
+            // entry was root
+            root = repl;
+        }
+        else if (entry == entry.parent.left) {
+            // entry was left child
+            entry.parent.left = repl;
+
+            // break reference for garbage collection
+            entry.parent = null;
+        }
+        else {
+            // entry was right child
+            entry.parent.right = repl;
+
+            // break reference for garbage collection
+            entry.parent = null;
+        }
+
+        // fix replacement
+        if (entry.color == BLACK) {
+            fixAfterDelete(repl);
+        }
+    }
+    else if (entry.parent == null) {
+        // entry was only node
+        root = null;
+    }
+    else {
+        // no children: use entry as phantom replacement and unlink
+        if (entry.color == BLACK) {
+            fixAfterDelete(entry);
+        }
+
+        if (entry.parent != null) {
+            if (entry == entry.parent.left) {
+                // entry was left child
+                entry.parent.left = null;
+            }
+            else {
+                // entry was right child
+                entry.parent.right = null;
+            }
+
+            // break reference for garbage collection
+            entry.parent = null;
+        }
+    }
+}
+
+local function TREE_MAP_ENTRY_CLASS parentOf(TREE_MAP_ENTRY_CLASS entry)
+{
+    parentOf = (entry != null) ? entry.parent : null;
+}
+
+local function TREE_MAP_ENTRY_CLASS leftOf(TREE_MAP_ENTRY_CLASS entry)
+{
+    leftOf = (entry != null) ? entry.left : null;
+}
+
+local function TREE_MAP_ENTRY_CLASS rightOf(TREE_MAP_ENTRY_CLASS entry)
+{
+    rightOf = (entry != null) ? entry.right : null;
+}
+
+local function bit colorOf(TREE_MAP_ENTRY_CLASS entry)
+{
+    colorOf = (entry != null) ? entry.color : BLACK;
+}
+
+local task setColor(TREE_MAP_ENTRY_CLASS entry, bit color)
+{
+    if (entry != null) entry.color = color;
+}
+
+task TREE_MAP_CLASS::rotateLeft(TREE_MAP_ENTRY_CLASS entry)
+{
+    TREE_MAP_ENTRY_CLASS r;
+
+    r = entry.right;
+    entry.right = r.left;
+    if (r.left != null) {
+        r.left.parent = entry;
+    }
+    r.parent = entry.parent;
+    if (entry.parent == null) {
+        root = r;
+    }
+    else if (entry.parent.left == entry) {
+        entry.parent.left = r;
+    }
+    else {
+        entry.parent.right = r;
+    }
+    r.left = entry;
+    entry.parent = r;
+}
+
+task TREE_MAP_CLASS::rotateRight(TREE_MAP_ENTRY_CLASS entry)
+{
+    TREE_MAP_ENTRY_CLASS l;
+
+    l = entry.left;
+    entry.left = l.right;
+    if (l.right != null) {
+        l.right.parent = entry;
+    }
+    l.parent = entry.parent;
+    if (entry.parent == null) {
+        root = l;
+    }
+    else if (entry.parent.right == entry) {
+        entry.parent.right = l;
+    }
+    else {
+        entry.parent.left = l;
+    }
+    l.right = entry;
+    entry.parent = l;
+}
+
+task TREE_MAP_CLASS::fixAfterInsert(TREE_MAP_ENTRY_CLASS entry)
+{
+    entry.color = RED;
+
+    while (entry != null && entry != root && entry.parent.color == RED) {
+        TREE_MAP_ENTRY_CLASS y;
+
+        if (parentOf(entry) == leftOf(parentOf(parentOf(entry)))) {
+            y = rightOf(parentOf(parentOf(entry)));
+            if (colorOf(y) == RED) {
+                setColor(parentOf(entry), BLACK);
+                setColor(y, BLACK);
+                setColor(parentOf(parentOf(entry)), RED);
+                entry = parentOf(parentOf(entry));
+            }
+            else {
+                if (entry == rightOf(parentOf(entry))) {
+                    entry = parentOf(entry);
+                    rotateLeft(entry);
+                }
+                setColor(parentOf(entry), BLACK);
+                setColor(parentOf(parentOf(entry)), RED);
+                if (parentOf(parentOf(entry)) != null) {
+                    rotateRight(parentOf(parentOf(entry)));
+                }
+            }
+        }
+        else {
+            // symmetric
+            y = leftOf(parentOf(parentOf(entry)));
+            if (colorOf(y) == RED) {
+                setColor(parentOf(entry), BLACK);
+                setColor(y, BLACK);
+                setColor(parentOf(parentOf(entry)), RED);
+                entry = parentOf(parentOf(entry));
+            }
+            else {
+                if (entry == leftOf(parentOf(entry))) {
+                    entry = parentOf(entry);
+                    rotateRight(entry);
+                }
+                setColor(parentOf(entry),  BLACK);
+                setColor(parentOf(parentOf(entry)), RED);
+                if (parentOf(parentOf(entry)) != null) {
+                    rotateLeft(parentOf(parentOf(entry)));
+                }
+            }
+        }
+    }
+
+    root.color = BLACK;
+}
+
+task TREE_MAP_CLASS::fixAfterDelete(TREE_MAP_ENTRY_CLASS entry)
+{
+    while (entry != root && colorOf(entry) == BLACK) {
+        TREE_MAP_ENTRY_CLASS sib;
+
+        if (entry == leftOf(parentOf(entry))) {
+            sib = rightOf(parentOf(entry));
+            if (colorOf(sib) == RED) {
+                setColor(sib, BLACK);
+                setColor(parentOf(entry), RED);
+                rotateLeft(parentOf(entry));
+                sib = rightOf(parentOf(entry));
+            }
+            if (colorOf(leftOf(sib))  == BLACK &&
+                colorOf(rightOf(sib)) == BLACK) {
+                setColor(sib,  RED);
+                entry = parentOf(entry);
+            }
+            else {
+                if (colorOf(rightOf(sib)) == BLACK) {
+                    setColor(leftOf(sib), BLACK);
+                    setColor(sib, RED);
+                    rotateRight(sib);
+                    sib = rightOf(parentOf(entry));
+                }
+                setColor(sib, colorOf(parentOf(entry)));
+                setColor(parentOf(entry), BLACK);
+                setColor(rightOf(sib), BLACK);
+                rotateLeft(parentOf(entry));
+                entry = root;
+            }
+        }
+        else {
+            // symmetric
+            sib = leftOf(parentOf(entry));
+            if (colorOf(sib) == RED) {
+                setColor(sib, BLACK);
+                setColor(parentOf(entry), RED);
+                rotateRight(parentOf(entry));
+                sib = leftOf(parentOf(entry));
+            }
+            if (colorOf(rightOf(sib)) == BLACK &&
+                colorOf(leftOf(sib)) == BLACK) {
+                setColor(sib,  RED);
+                entry = parentOf(entry);
+            }
+            else {
+                if (colorOf(leftOf(sib)) == BLACK) {
+                    setColor(rightOf(sib), BLACK);
+                    setColor(sib, RED);
+                    rotateLeft(sib);
+                    sib = leftOf(parentOf(entry));
+                }
+                setColor(sib, colorOf(parentOf(entry)));
+                setColor(parentOf(entry), BLACK);
+                setColor(leftOf(sib), BLACK);
+                rotateRight(parentOf(entry));
+                entry = root;
+            }
+        }
+    }
+
+    setColor(entry, BLACK);
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapEntry
+////////////////////////////////////////////////////////////
+
+class TREE_MAP_ENTRY_CLASS
+extends MAP_ENTRY_CLASS
+{
+    TREE_MAP_ENTRY_CLASS parent;
+    TREE_MAP_ENTRY_CLASS left;
+    TREE_MAP_ENTRY_CLASS right;
+    bit color;
+
+    task new(KEY_TYPE _key, VALUE_TYPE _value, TREE_MAP_ENTRY_CLASS _parent)
+    {
+        super.new(_key, _value);
+
+        parent = _parent;
+        color = BLACK;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapEntrySet
+////////////////////////////////////////////////////////////
+
+typedef class TREE_MAP_ENTRY_ITERATOR_CLASS;
+
+local class TREE_MAP_ENTRY_SET_CLASS
+extends Set
+{
+    local TREE_MAP_CLASS treeMap;
+
+    // Collection
+    virtual task add(Object o);
+    virtual task clear();
+    virtual function bit contains(Object o);
+    virtual function Iterator iterator();
+    virtual task remove(Object o);
+    virtual function integer size();
+
+    // TreeMapEntrySet
+    task new(TREE_MAP_CLASS _treeMap);
+}
+
+task TREE_MAP_ENTRY_SET_CLASS::add(Object o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map entry sets")
+}
+
+task TREE_MAP_ENTRY_SET_CLASS::clear()
+{
+    treeMap.clear();
+}
+
+function bit TREE_MAP_ENTRY_SET_CLASS::contains(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        contains = 0;
+        return;
+    }
+
+    mapEntry = treeMap.findKey(entry.key);
+    contains = (mapEntry != null && mapEntry.equals(entry));
+}
+
+function Iterator TREE_MAP_ENTRY_SET_CLASS::iterator()
+{
+    TREE_MAP_ENTRY_ITERATOR_CLASS entryIter = new(treeMap, treeMap.firstEntry());
+
+    iterator = entryIter;
+}
+
+task TREE_MAP_ENTRY_SET_CLASS::remove(Object o)
+{
+    MAP_ENTRY_CLASS entry;
+    TREE_MAP_ENTRY_CLASS mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        return;
+    }
+
+    cast_assign(mapEntry, treeMap.findKey(entry.key));
+    if (mapEntry != null && mapEntry.equals(entry)) {
+        treeMap.removeEntry(mapEntry);
+    }
+}
+
+function integer TREE_MAP_ENTRY_SET_CLASS::size()
+{
+    size = treeMap.size();
+}
+
+task TREE_MAP_ENTRY_SET_CLASS::new(TREE_MAP_CLASS _treeMap)
+{
+    treeMap = _treeMap;
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapKeySet
+////////////////////////////////////////////////////////////
+
+local class TREE_MAP_KEY_SET_CLASS
+extends KEY_SET_CLASS
+{
+    local TREE_MAP_CLASS treeMap;
+
+    // Collection
+    virtual task add(KEY_TYPE o);
+    virtual task clear();
+    virtual function bit contains(KEY_TYPE o);
+    virtual function KEY_ITERATOR_CLASS iterator();
+    virtual task remove(KEY_TYPE o);
+    virtual function integer size();
+
+    // TreeMapKeySet
+    task new(TREE_MAP_CLASS _treeMap);
+}
+
+task TREE_MAP_KEY_SET_CLASS::add(KEY_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map key sets")
+}
+
+task TREE_MAP_KEY_SET_CLASS::clear()
+{
+    treeMap.clear();
+}
+
+function bit TREE_MAP_KEY_SET_CLASS::contains(KEY_TYPE o)
+{
+    contains = treeMap.containsKey(o);
+}
+
+function KEY_ITERATOR_CLASS TREE_MAP_KEY_SET_CLASS::iterator()
+{
+    TREE_MAP_ENTRY_ITERATOR_CLASS entryIter = new(treeMap, treeMap.firstEntry());
+    ENTRY_SET_KEY_ITERATOR_CLASS keyIter = new(entryIter);
+
+    iterator = keyIter;
+}
+
+task TREE_MAP_KEY_SET_CLASS::remove(KEY_TYPE o)
+{
+    treeMap.remove(o);
+}
+
+function integer TREE_MAP_KEY_SET_CLASS::size()
+{
+    size = treeMap.size();
+}
+
+task TREE_MAP_KEY_SET_CLASS::new(TREE_MAP_CLASS _treeMap)
+{
+    treeMap = _treeMap;
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapValueCollection
+////////////////////////////////////////////////////////////
+
+local class TREE_MAP_VALUE_COLLECTION_CLASS
+extends VALUE_COLLECTION_CLASS
+{
+    local TREE_MAP_CLASS treeMap;
+
+    // Collection
+    virtual task add(VALUE_TYPE o);
+    virtual task clear();
+    virtual function bit contains(VALUE_TYPE o);
+    virtual function VALUE_ITERATOR_CLASS iterator();
+    virtual function integer size();
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+
+    // TreeMapValueCollection
+    task new(TREE_MAP_CLASS _treeMap);
+}
+
+function bit TREE_MAP_VALUE_COLLECTION_CLASS::equals(Object o)
+{
+    equals = 0;
+    LOG_MSG(logIntf, LS_FATAL, "equals() not supported on map value collections")
+}
+
+function integer TREE_MAP_VALUE_COLLECTION_CLASS::hashCode()
+{
+    hashCode = 0;
+    LOG_MSG(logIntf, LS_FATAL, "hashCode() not supported on map value collections")
+}
+
+task TREE_MAP_VALUE_COLLECTION_CLASS::add(VALUE_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map value collections")
+}
+
+task TREE_MAP_VALUE_COLLECTION_CLASS::clear()
+{
+    treeMap.clear();
+}
+
+function bit TREE_MAP_VALUE_COLLECTION_CLASS::contains(VALUE_TYPE o)
+{
+    contains = treeMap.containsValue(o);
+}
+
+function VALUE_ITERATOR_CLASS TREE_MAP_VALUE_COLLECTION_CLASS::iterator()
+{
+    TREE_MAP_ENTRY_ITERATOR_CLASS entryIter = new(treeMap, treeMap.firstEntry());
+    ENTRY_SET_VALUE_ITERATOR_CLASS valueIter = new(entryIter);
+
+    iterator = valueIter;
+}
+
+function integer TREE_MAP_VALUE_COLLECTION_CLASS::size()
+{
+    size = treeMap.size();
+}
+
+task TREE_MAP_VALUE_COLLECTION_CLASS::new(TREE_MAP_CLASS _treeMap)
+{
+    treeMap = _treeMap;
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapEntryIterator
+////////////////////////////////////////////////////////////
+
+local class TREE_MAP_ENTRY_ITERATOR_CLASS
+extends Iterator
+{
+    local TREE_MAP_CLASS treeMap;
+    local TREE_MAP_ENTRY_CLASS curEntry;
+    local TREE_MAP_ENTRY_CLASS nextEntry;
+    local TREE_MAP_ENTRY_CLASS stopEntry;
+
+    task new(TREE_MAP_CLASS _treeMap,
+        TREE_MAP_ENTRY_CLASS _firstEntry,
+        TREE_MAP_ENTRY_CLASS _stopEntry = null);
+
+    virtual function bit hasNext();
+    virtual function Object next();
+    virtual task remove();
+}
+
+task TREE_MAP_ENTRY_ITERATOR_CLASS::new(TREE_MAP_CLASS _treeMap,
+    TREE_MAP_ENTRY_CLASS _firstEntry,
+    TREE_MAP_ENTRY_CLASS _stopEntry = null)
+{
+    treeMap = _treeMap;
+    curEntry = null;
+    nextEntry = _firstEntry;
+    stopEntry = _stopEntry;
+}
+
+function bit TREE_MAP_ENTRY_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (nextEntry != stopEntry);
+}
+
+function Object TREE_MAP_ENTRY_ITERATOR_CLASS::next()
+{
+    assert(nextEntry != stopEntry);
+
+    curEntry = nextEntry;
+    nextEntry = treeMap.successor(curEntry);
+    next = curEntry;
+}
+
+task TREE_MAP_ENTRY_ITERATOR_CLASS::remove()
+{
+    if (curEntry == null) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+
+    // deleted entry becomes successor if internal
+    if (curEntry.left != null && curEntry.right != null) {
+        nextEntry = curEntry;
+    }
+
+    treeMap.removeEntry(curEntry);
+    curEntry = null;
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapSubMap
+////////////////////////////////////////////////////////////
+
+typedef class TREE_MAP_SUB_MAP_ENTRY_SET_CLASS;
+
+class TREE_MAP_SUB_MAP_CLASS
+extends SORTED_MAP_CLASS
+{
+    // For local use only!
+    TREE_MAP_CLASS treeMap;
+    KEY_TYPE fromKey;
+    bit fromValid;
+    KEY_TYPE toKey;
+    bit toValid;
+
+    // Map
+    virtual function Set entrySet();
+    virtual function MAP_ENTRY_CLASS findKey(KEY_TYPE key);
+    virtual task put(KEY_TYPE key, VALUE_TYPE value);
+    virtual task remove(KEY_TYPE key);
+
+    // SortedMap
+    virtual function KEY_COMPARATOR_CLASS comparator();
+    virtual function KEY_TYPE firstKey();
+    virtual function KEY_TYPE lastKey();
+    virtual function SORTED_MAP_CLASS subMap(KEY_TYPE fromKey, KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS headMap(KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS tailMap(KEY_TYPE fromKey);
+
+    // TreeMapSubMap
+    task new(TREE_MAP_CLASS _treeMap,
+        KEY_TYPE _fromKey, bit _fromValid,
+        KEY_TYPE _toKey, bit _toValid);
+
+    local function bit inRange(KEY_TYPE key, bit includeToKey = 0);
+}
+
+task TREE_MAP_SUB_MAP_CLASS::new(TREE_MAP_CLASS _treeMap,
+    KEY_TYPE _fromKey, bit _fromValid,
+    KEY_TYPE _toKey, bit _toValid)
+{
+    treeMap = _treeMap;
+    fromKey = _fromKey;
+    fromValid = _fromValid;
+    toKey = _toKey;
+    toValid = _toValid;
+
+    assert(!fromValid || !toValid ||
+        treeMap.keyComp.compare(fromKey, toKey) <= 0);
+}
+
+function Set TREE_MAP_SUB_MAP_CLASS::entrySet()
+{
+    TREE_MAP_SUB_MAP_ENTRY_SET_CLASS subMapEntrySet = new(this);
+    entrySet = subMapEntrySet;
+}
+
+function MAP_ENTRY_CLASS TREE_MAP_SUB_MAP_CLASS::findKey(KEY_TYPE key)
+{
+    if (inRange(key)) {
+        findKey = treeMap.findKey(key);
+    }
+}
+
+task TREE_MAP_SUB_MAP_CLASS::put(KEY_TYPE key, VALUE_TYPE value)
+{
+    assert(inRange(key));
+    treeMap.put(key, value);
+}
+
+task TREE_MAP_SUB_MAP_CLASS::remove(KEY_TYPE key)
+{
+    if (inRange(key)) {
+        treeMap.remove(key);
+    }
+}
+
+function KEY_COMPARATOR_CLASS TREE_MAP_SUB_MAP_CLASS::comparator()
+{
+    comparator = treeMap.keyComp;
+}
+
+function KEY_TYPE TREE_MAP_SUB_MAP_CLASS::firstKey()
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    if (fromValid) {
+        entry = treeMap.findEntryGE(fromKey);
+    } else {
+        entry = treeMap.firstEntry();
+    }
+    assert(entry != null);
+
+    if (toValid) {
+        assert(treeMap.keyComp.compare(entry.key, toKey) < 0);
+    }
+
+    firstKey = entry.key;
+}
+
+function KEY_TYPE TREE_MAP_SUB_MAP_CLASS::lastKey()
+{
+    TREE_MAP_ENTRY_CLASS entry;
+
+    if (toValid) {
+        entry = treeMap.findEntryLT(toKey);
+    } else {
+        entry = treeMap.lastEntry();
+    }
+    assert(entry != null);
+
+    if (fromValid) {
+        assert(treeMap.keyComp.compare(entry.key, fromKey) >= 0);
+    }
+
+    lastKey = entry.key;
+}
+
+function SORTED_MAP_CLASS TREE_MAP_SUB_MAP_CLASS::subMap(KEY_TYPE fromKey, KEY_TYPE toKey)
+{
+    assert(inRange(fromKey, 1));
+    assert(inRange(toKey, 1));
+    subMap = treeMap.subMap(fromKey, toKey);
+}
+
+function SORTED_MAP_CLASS TREE_MAP_SUB_MAP_CLASS::headMap(KEY_TYPE toKey)
+{
+    assert(inRange(toKey, 1));
+    headMap = treeMap.headMap(toKey);
+}
+
+function SORTED_MAP_CLASS TREE_MAP_SUB_MAP_CLASS::tailMap(KEY_TYPE fromKey)
+{
+    assert(inRange(fromKey, 1));
+    tailMap = treeMap.tailMap(fromKey);
+}
+
+function bit TREE_MAP_SUB_MAP_CLASS::inRange(KEY_TYPE key, bit includeToKey = 0)
+{
+    inRange = (!fromValid || treeMap.keyComp.compare(key, fromKey) >= 0) &&
+              (!toValid || treeMap.keyComp.compare(key, toKey) <= (includeToKey ? 0 : -1));
+}
+
+////////////////////////////////////////////////////////////
+// TreeMapSubMapEntrySet
+////////////////////////////////////////////////////////////
+
+local class TREE_MAP_SUB_MAP_ENTRY_SET_CLASS
+extends Set
+{
+    local TREE_MAP_SUB_MAP_CLASS subMap;
+
+    // Collection
+    virtual task add(Object o);
+    virtual function bit contains(Object o);
+    virtual function bit isEmpty();
+    virtual function Iterator iterator();
+    virtual task remove(Object o);
+
+    // TreeMapSubMapEntrySet
+    task new(TREE_MAP_SUB_MAP_CLASS _subMap);
+}
+
+task TREE_MAP_SUB_MAP_ENTRY_SET_CLASS::add(Object o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on sub-map entry sets")
+}
+
+function bit TREE_MAP_SUB_MAP_ENTRY_SET_CLASS::contains(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        contains = 0;
+        return;
+    }
+
+    mapEntry = subMap.findKey(entry.key);
+    contains = (mapEntry != null && mapEntry.equals(entry));
+}
+
+function bit TREE_MAP_SUB_MAP_ENTRY_SET_CLASS::isEmpty()
+{
+    Iterator i = iterator();
+    isEmpty = !i.hasNext();
+}
+
+function Iterator TREE_MAP_SUB_MAP_ENTRY_SET_CLASS::iterator()
+{
+    TREE_MAP_CLASS treeMap = subMap.treeMap;
+    TREE_MAP_ENTRY_ITERATOR_CLASS entryIter = new(treeMap,
+        subMap.fromValid ? treeMap.findEntryGE(subMap.fromKey) : treeMap.firstEntry(),
+        subMap.toValid ? treeMap.findEntryGE(subMap.toKey) : null);
+
+    iterator = entryIter;
+}
+
+task TREE_MAP_SUB_MAP_ENTRY_SET_CLASS::remove(Object o)
+{
+    MAP_ENTRY_CLASS entry;
+    TREE_MAP_ENTRY_CLASS mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        return;
+    }
+
+    cast_assign(mapEntry, subMap.findKey(entry.key));
+    if (mapEntry != null && mapEntry.equals(entry)) {
+        subMap.treeMap.removeEntry(mapEntry);
+    }
+}
+
+task TREE_MAP_SUB_MAP_ENTRY_SET_CLASS::new(TREE_MAP_SUB_MAP_CLASS _subMap)
+{
+    subMap = _subMap;
+}
+

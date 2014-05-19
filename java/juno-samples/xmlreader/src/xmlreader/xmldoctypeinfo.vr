@@ -1,0 +1,159 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "strhashmap.vrh"
+
+////////////////////////////////////////////////////////////
+// XmlNotationInfo
+////////////////////////////////////////////////////////////
+
+class XmlNotationInfo
+extends Object
+{
+    string name;
+    string publicId;
+    string systemId;
+
+    task new(string _name, string _publicId, string _systemId)
+    {
+        name = _name;
+        publicId = _publicId;
+        systemId = _systemId;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// XmlEntityInfo
+////////////////////////////////////////////////////////////
+
+class XmlEntityInfo
+extends Object
+{
+    string name;
+    string value;
+    string publicId;
+    string systemId;
+    string ndata;
+
+    task new(string _name, string _value, string _publicId, string _systemId, string _ndata)
+    {
+        name = _name;
+        value = _value;
+        publicId = _publicId;
+        systemId = _systemId;
+        ndata = _ndata;
+    }
+
+    function bit isExternal()
+    {
+        isExternal = (systemId != null);
+    }
+
+    function bit isUnparsed()
+    {
+        isUnparsed = (ndata != null);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// XmlDocTypeInfo
+////////////////////////////////////////////////////////////
+
+class XmlDocTypeInfo
+{
+    local StrHashMap notations;
+    local StrHashMap genEntities;
+    local StrHashMap paramEntities;
+
+    task new()
+    {
+        XmlEntityInfo entity;
+        string doubleQuote;
+
+        notations = new;
+        genEntities = new;
+        paramEntities = new;
+
+        // predefined entities
+        entity = new("lt", "&#60;", null, null, null);
+        genEntities.put(entity.name, entity);
+
+        entity = new("gt", ">", null, null, null);
+        genEntities.put(entity.name, entity);
+
+        entity = new("amp", "&#38;", null, null, null);
+        genEntities.put(entity.name, entity);
+
+        entity = new("apos", "'", null, null, null);
+        genEntities.put(entity.name, entity);
+
+        doubleQuote.bittostr(8'h22);
+        entity = new("quot", doubleQuote, null, null, null);
+        genEntities.put(entity.name, entity);
+    }
+
+    task destroy()
+    {
+        notations.destroy();
+        genEntities.destroy();
+        paramEntities.destroy();
+    }
+
+    task addNotation(string name, string publicId, string systemId)
+    {
+        XmlNotationInfo notation = new(name, publicId, systemId);
+        notations.put(name, notation);
+    }
+
+    function XmlNotationInfo lookupNotation(string name)
+    {
+        cast_assign(lookupNotation, notations.get(name));
+    }
+
+    task addGenEntity(string name, string value)
+    {
+        XmlEntityInfo entity = new(name, value, null, null, null);
+        genEntities.put(name, entity);
+    }
+
+    task addGenEntityExt(string name, string publicId, string systemId, string ndata)
+    {
+        XmlEntityInfo entity = new(name, null, publicId, systemId, ndata);
+        genEntities.put(name, entity);
+    }
+
+    function XmlEntityInfo lookupGenEntity(string name)
+    {
+        cast_assign(lookupGenEntity, genEntities.get(name));
+    }
+
+    task addParamEntity(string name, string value)
+    {
+        XmlEntityInfo entity = new(name, value, null, null, null);
+        paramEntities.put(name, entity);
+    }
+
+    task addParamEntityExt(string name, string publicId, string systemId)
+    {
+        XmlEntityInfo entity = new(name, null, publicId, systemId, null);
+        paramEntities.put(name, entity);
+    }
+
+    function XmlEntityInfo lookupParamEntity(string name)
+    {
+        cast_assign(lookupParamEntity, paramEntities.get(name));
+    }
+}
+

@@ -1,0 +1,2213 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "log.vrh"
+#include "sax.vrh"
+#include "parsestream.vrh"
+#include "xmlattributes.vrh"
+#include "xmldoctypeinfo.vrh"
+#include "xmlerror.vrh"
+#include "xmlinputsource.vrh"
+#include "xmllocator.vrh"
+
+////////////////////////////////////////////////////////////
+// XmlReader
+////////////////////////////////////////////////////////////
+
+typedef class XmlParseContext;
+typedef class XmlParser;
+
+class XmlReader
+extends SaxXMLReader
+{
+    LogInterface logIntf;
+    SaxContentHandler contentHandler;
+    SaxDTDHandler dtdHandler;
+    SaxEntityResolver entityResolver;
+    SaxErrorHandler errorHandler;
+
+    task new()
+    {
+        XmlErrorHandler errImpl;
+
+        logIntf = new("xmlreader");
+        logIntf.loadSettings("xmlreader");
+
+        contentHandler = new;
+        dtdHandler = new;
+        entityResolver = new;
+        errImpl = new(logIntf);
+        errorHandler = errImpl;
+    }
+
+    task inheritHandlers(SaxXMLReader reader)
+    {
+        contentHandler = reader.getContentHandler();
+        dtdHandler = reader.getDTDHandler();
+        entityResolver = reader.getEntityResolver();
+        errorHandler = reader.getErrorHandler();
+    }
+
+    // Return the current content handler.
+    virtual function SaxContentHandler getContentHandler()
+    {
+        getContentHandler = contentHandler;
+    }
+
+    // Return the current DTD handler.
+    virtual function SaxDTDHandler getDTDHandler()
+    {
+        getDTDHandler = dtdHandler;
+    }
+
+    // Return the current entity resolver.
+    virtual function SaxEntityResolver getEntityResolver()
+    {
+        getEntityResolver = entityResolver;
+    }
+
+    // Return the current error handler.
+    virtual function SaxErrorHandler getErrorHandler()
+    {
+        getErrorHandler = errorHandler;
+    }
+
+    // Look up the value of a feature.
+    virtual function bit getFeature(string name)
+    {
+        // not implemented
+        getFeature = 0;
+    }
+
+    // Look up the value of a property.
+    virtual function Object getProperty(string name)
+    {
+        // not implemented
+        getProperty = null;
+    }
+
+    // Parse an XML document.
+    virtual task parse(SaxInputSource source)
+    {
+        XmlParseContext ctx = new;
+        XmlParser parser = new(this, ctx, source);
+        parser.parse();
+    }
+
+    // Allow an application to register a content event handler.
+    virtual task setContentHandler(SaxContentHandler handler)
+    {
+        assert(handler != null);
+        contentHandler = handler;
+    }
+
+    // Allow an application to register a DTD event handler.
+    virtual task setDTDHandler(SaxDTDHandler handler)
+    {
+        assert(handler != null);
+        dtdHandler = handler;
+    }
+
+    // Allow an application to register an entity resolver.
+    virtual task setEntityResolver(SaxEntityResolver resolver)
+    {
+        assert(resolver != null);
+        entityResolver = resolver;
+    }
+
+    // Allow an application to register an error event handler.
+    virtual task setErrorHandler(SaxErrorHandler handler)
+    {
+        assert(handler != null);
+        errorHandler = handler;
+    }
+
+    // Set the state of a feature.
+    virtual task setFeature(string name, bit value)
+    {
+        // not implemented
+    }
+
+    // Set the value of a property.
+    virtual task setProperty(string name, Object value)
+    {
+        // not implemented
+    }
+}
+
+////////////////////////////////////////////////////////////
+// XmlParseContext
+////////////////////////////////////////////////////////////
+
+// Context information shared by the entire document,
+// including all external subsets.
+local class XmlParseContext
+{
+    XmlDocTypeInfo docType;
+    XmlNameScope lastScope;
+    bit gotFatalError;
+
+    task new()
+    {
+        docType = new;
+        lastScope = null;
+        gotFatalError = 0;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// XmlParser
+////////////////////////////////////////////////////////////
+
+enum XmlEntityAction =
+    XEA_Included,
+    XEA_Forbidden,
+    XEA_Notify,
+    XEA_Bypassed,
+    XEA_IncludedAsPE;
+
+// Parses a single source/subset of a document.
+local class XmlParser
+{
+    local XmlReader reader;
+    local XmlParseContext ctx;
+    local ParseStream parseStream;
+    local XmlActiveLocator locator;
+    local string doubleQuote;
+
+//LOCAL
+#if 0
+    local integer nesting = 0;
+    #define ENTER(name) { \
+        string indent; \
+        indent = { nesting { "  " } }; \
+        reader.logIntf.printLogMsg(LS_DEBUG, \
+            { indent, "ENTER: name" }); \
+        ++nesting; }
+    #define EXIT(name) { \
+        string indent; \
+        --nesting; \
+        indent = { nesting { "  " } }; \
+        reader.logIntf.printLogMsg(LS_DEBUG, \
+            { indent, psprintf("EXIT: name (%b)", matched) }); }
+#else
+    #define ENTER(name)
+    #define EXIT(name)
+#endif
+//END_LOCAL
+
+    task new(XmlReader _reader, XmlParseContext _ctx, SaxInputSource _source);
+    task parse();
+
+    local function bit parseDocument();
+    local function bit parseS();
+    local function bit parseNameChar();
+    local function bit parseName(var string name);
+    local function bit parseNmtoken(var string nmtoken);
+    local function bit parseEntityValue(var string value);
+    local function bit parseAttValue(var string value);
+    local function bit parseSystemLiteral(var string systemId);
+    local function bit parsePubidLiteral(var string publicId);
+    local function bit parsePubidChar();
+    local function bit parseCharData(var string data);
+    local function bit parseComment();
+    local function bit parsePI();
+    local function bit parsePITarget(var string target);
+    local function bit parseCDSect(var string data);
+    local function bit parseCDStart();
+    local function bit parseCData(var string data);
+    local function bit parseCDEnd();
+    local function bit parseProlog();
+    local function bit parseXMLDecl();
+    local function bit parseVersionInfo(var string ver);
+    local function bit parseEq();
+    local function bit parseVersionNum(var string ver);
+    local function bit parseMisc();
+    local function bit parseDoctypedecl();
+    local function bit parseDeclSep();
+    local function bit parseMarkupdecl();
+    local function bit parseExtSubset();
+    local function bit parseExtSubsetDecl();
+    local function bit parseSDDecl(var bit standalone);
+    local function bit parseYesNo(var bit yes);
+    local function bit parseElement();
+    local function bit parseAttribute(XmlAttributes attrs, var XmlNameScope elemScope);
+    local function bit parseETag(var string prefix, var string localName);
+    local function bit parseContent();
+    local function bit parseElementdecl();
+    local function bit parseContentspec();
+    local function bit parseChildren();
+    local function bit parseCp();
+    local function bit parseChoice();
+    local function bit parseSeq();
+    local function bit parseMixed();
+    local function bit parseAttlistDecl();
+    local function bit parseAttDef();
+    local function bit parseAttType();
+    local function bit parseStringType(var string type);
+    local function bit parseTokenizedType(var string type);
+    local function bit parseEnumeratedType();
+    local function bit parseNotationType();
+    local function bit parseEnumeration();
+    local function bit parseDefaultDecl();
+    local function bit parseConditionalSect();
+    local function bit parseIgnoreSectContents();
+    local function bit parseIgnore();
+    local function bit parseCharRef(var string char);
+    local function bit parseEntityRef(var string name);
+    local function string expandEntityRef(string name);
+    local function bit parsePEReference(var string name);
+    local function string expandPEReference(string name);
+    local function bit parseEntityDecl();
+    local function bit parseEntityDef(string name);
+    local function bit parsePEDef(string name);
+    local function bit parseExternalID(var string publicId, var string systemId);
+    local function bit parseNDataDecl(var string ndata);
+    local function bit parseTextDecl();
+    local function bit parseExtParsedEnt();
+    local function bit parseEncodingDecl(var string encName);
+    local function bit parseEncName(var string encName);
+    local function bit parseNotationDecl();
+    local function bit parsePublicID(var string publicId);
+    local function bit parseNSAttName(var string name);
+    local function bit parseNCName(var string name);
+    local function bit parseNCNameChar();
+    local function bit parseQName(var string prefix, var string localName);
+    local function bit parseEOF();
+    local function bit parseLiteral(string s, bit required = 0);
+    local task warning(string msg);
+    local task nonfatalError(string msg);
+    local task fatalError(string msg);
+    local function bit require(bit matched, string prodName);
+}
+
+task XmlParser::new(XmlReader _reader, XmlParseContext _ctx, SaxInputSource _source)
+{
+    reader = _reader;
+    ctx = _ctx;
+
+    parseStream = new(_source.getStream());
+    locator = new(parseStream);
+    locator.setPublicId(_source.getPublicId());
+    locator.setSystemId(_source.getSystemId());
+
+    doubleQuote.bittostr(8'h22);
+}
+
+task XmlParser::parse()
+{
+    bit matched;
+
+    reader.contentHandler.setDocumentLocator(locator);
+    reader.contentHandler.startDocument();
+
+    matched = require(parseDocument(), "<Document>") &&
+        require(parseEOF(), "<EOF>");
+
+    if (matched) {
+        reader.contentHandler.endDocument();
+    }
+}
+
+function bit XmlParser::parseDocument()
+{
+    // [1] Document ::= Prolog Element Misc*
+    bit matched;
+
+    ENTER(Document)
+    matched = parseProlog() &&
+        require(parseElement(), "<Element>");
+    if (matched) {
+        while (parseMisc()) {}
+        matched = !ctx.gotFatalError;
+    }
+    parseDocument = matched;
+    EXIT(Document)
+}
+
+function bit XmlParser::parseS()
+{
+    // [3] S ::= (#x20 | #x9 | #xD | #xA)+
+    bit matched = 0;
+
+    ENTER(S)
+    while (1) {
+        integer ch;
+
+        ch = parseStream.peek();
+        if ((ch == 8'h09 || ch == 8'h0A || ch == 8'h0D || ch == 8'h20)) {
+            void = parseStream.skip(1);
+            matched = 1;
+        } else {
+            break;
+        }
+    }
+    parseS = matched;
+    EXIT(S)
+}
+
+function bit XmlParser::parseNameChar()
+{
+    // [4] NameChar ::= Letter | Digit | '.' | '-' | '_' | ':' | CombiningChar | Extender
+    bit matched;
+    integer ch;
+
+    ch = parseStream.peek();
+    matched =
+        (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+        (ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+        (ch >= 8'h30 && ch <= 8'h39) || // "0"-"9"
+        (ch == 8'h2E) || // "."
+        (ch == 8'h2D) || // "-"
+        (ch == 8'h5F) || // "_"
+        (ch == 8'h3A); // ":"
+    if (matched) {
+        void = parseStream.skip(1);
+    }
+    parseNameChar = matched;
+}
+
+function bit XmlParser::parseName(var string name)
+{
+    // [5] Name ::= (Letter | '_' | ':') (NameChar)*
+    bit matched;
+    integer ch;
+
+    ENTER(Name)
+    ch = parseStream.peek();
+    matched =
+        (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+        (ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+        (ch == 8'h5F) || // "_"
+        (ch == 8'h3A); // ":"
+    if (matched) {
+        parseStream.beginCapture();
+        void = parseStream.skip(1);
+        while (parseNameChar()) {}
+        name = parseStream.endCapture(matched);
+    }
+    parseName = matched;
+    EXIT(Name)
+}
+
+function bit XmlParser::parseNmtoken(var string nmtoken)
+{
+    // [7] Nmtoken ::= (NameChar)+
+    bit matched;
+
+    ENTER(Nmtoken)
+    parseStream.beginCapture();
+    matched = parseNameChar();
+    if (matched) {
+        while (parseNameChar()) {}
+    }
+    nmtoken = parseStream.endCapture(matched);
+    parseNmtoken = matched;
+    EXIT(Nmtoken)
+}
+
+function bit XmlParser::parseEntityValue(var string value)
+{
+    // [9] EntityValue ::= '"' ([^%&"] | PEReference | Reference)* '"' |
+    //                     "'" ([^%&'] | PEReference | Reference)* "'"
+    // [67] Reference ::= EntityRef | CharRef
+    bit matched = 0;
+    string delim;
+
+    ENTER(EntityValue)
+    if (parseLiteral(doubleQuote)) {
+        delim = doubleQuote;
+        matched = 1;
+    }
+    else if (parseLiteral("'")) {
+        delim = "'";
+        matched = 1;
+    }
+    if (matched) {
+        integer delimCh;
+
+        delimCh = delim.getc(0);
+        while (1) {
+            string term;
+            string name;
+            integer ch;
+
+            matched = 0;
+            parseStream.beginCapture();
+            while (1) {
+                ch = parseStream.peek();
+                if (ch != -1 && ch != 8'h25 && ch != 8'h26 && ch != delimCh) {
+                    void = parseStream.skip(1);
+                    matched = 1;
+                } else {
+                    break;
+                }
+            }
+            term = parseStream.endCapture(matched);
+
+            if (!matched && parsePEReference(name)) {
+                term = expandPEReference(name);
+                matched = !ctx.gotFatalError;
+            }
+            else if (!matched && !ctx.gotFatalError && parseCharRef(term)) {
+                matched = 1;
+            }
+            else if (!matched && !ctx.gotFatalError && parseEntityRef(name)) {
+                term = { "&", name, ";" };
+                matched = 1;
+            }
+
+            if (matched) {
+                value = { value, term };
+            } else {
+                break;
+            }
+        }
+        matched = !ctx.gotFatalError && parseLiteral(delim, 1);
+    }
+    parseEntityValue = matched;
+    EXIT(EntityValue)
+}
+
+function bit XmlParser::parseAttValue(var string value)
+{
+    // [10] AttValue ::= '"' ([^<&"] | Reference)* '"' |
+    //                   "'" ([^<&'] | Reference)* "'"
+    // [67] Reference ::= EntityRef | CharRef
+    bit matched = 0;
+    string delim;
+
+    ENTER(AttValue)
+    if (parseLiteral(doubleQuote)) {
+        delim = doubleQuote;
+        matched = 1;
+    }
+    else if (parseLiteral("'")) {
+        delim = "'";
+        matched = 1;
+    }
+    if (matched) {
+        integer delimCh;
+
+        delimCh = delim.getc(0);
+        while (1) {
+            string term;
+            string name;
+            integer ch;
+
+            matched = 0;
+            parseStream.beginCapture();
+            while (1) {
+                ch = parseStream.peek();
+                if (ch != -1 && ch != 8'h3C && ch != 8'h26 && ch != delimCh) {
+                    void = parseStream.skip(1);
+                    matched = 1;
+                } else {
+                    break;
+                }
+            }
+            term = parseStream.endCapture(matched);
+
+            if (!matched && parseCharRef(term)) {
+                matched = 1;
+            }
+            else if (!matched && !ctx.gotFatalError && parseEntityRef(name)) {
+                XmlEntityInfo entity = ctx.docType.lookupGenEntity(name);
+                if (entity != null) {
+                    if (!entity.isExternal()) {
+                        term = entity.value;
+                        matched = 1;
+                    } else {
+                        fatalError({ "Illegal reference to external entity ", name });
+                    }
+                } else {
+                    nonfatalError({ "Reference to undefined entity ", name });
+                    term = "";
+                    matched = 1;
+                }
+            }
+
+            if (matched) {
+                value = { value, term };
+            } else {
+                break;
+            }
+        }
+        matched = !ctx.gotFatalError && parseLiteral(delim, 1);
+    }
+    parseAttValue = matched;
+    EXIT(AttValue)
+}
+
+function bit XmlParser::parseSystemLiteral(var string systemId)
+{
+    // [11] SystemLiteral ::= ('"' [^"]* '"') | ("'" [^']* "'")
+    bit matched = 0;
+    string delim;
+
+    ENTER(SystemLiteral)
+    if (parseLiteral(doubleQuote)) {
+        delim = doubleQuote;
+        matched = 1;
+    }
+    else if (parseLiteral("'")) {
+        delim = "'";
+        matched = 1;
+    }
+    if (matched) {
+        integer delimCh;
+
+        delimCh = delim.getc(0);
+        parseStream.beginCapture();
+        while (1) {
+            integer ch = parseStream.peek();
+            if (ch != -1 && ch != delimCh) {
+                void = parseStream.skip(1);
+                continue;
+            }
+            break;
+        }
+        systemId = parseStream.endCapture();
+        matched = parseLiteral(delim, 1);
+    }
+    parseSystemLiteral = matched;
+    EXIT(SystemLiteral)
+}
+
+function bit XmlParser::parsePubidLiteral(var string publicId)
+{
+    // [12] PubidLiteral ::= '"' PubidChar* '"' |
+    //                       "'" (PubidChar - "'")* "'"
+    bit matched = 0;
+
+    ENTER(PubidLiteral)
+    if (parseLiteral(doubleQuote)) {
+        parseStream.beginCapture();
+        while (parsePubidChar()) {}
+        publicId = parseStream.endCapture();
+        matched = parseLiteral(doubleQuote, 1);
+    }
+    else if (parseLiteral("'")) {
+        parseStream.beginCapture();
+        while (1) {
+            integer ch = parseStream.peek();
+            if (ch == 8'h27 || !parsePubidChar()) break;
+        }
+        publicId = parseStream.endCapture();
+        matched = parseLiteral("'", 1);
+    }
+    parsePubidLiteral = matched;
+    EXIT(PubidLiteral)
+}
+
+function bit XmlParser::parsePubidChar()
+{
+    // [13] PubidChar ::= #x20 | #xD | #xA | [a-zA-Z0-9] | [-'()+,./:=?;!*#@$_%]
+    bit matched;
+    integer ch;
+
+    ch = parseStream.peek();
+    matched =
+        (ch == 8'h20) ||
+        (ch == 8'h0D) ||
+        (ch == 8'h0A) ||
+        (ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+        (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+        (ch >= 8'h30 && ch <= 8'h39) || // "0"-"9"
+        (ch == 8'h2D) || // "-"
+        (ch == 8'h27) || // "'"
+        (ch == 8'h28) || // "("
+        (ch == 8'h29) || // ")"
+        (ch == 8'h2B) || // "+"
+        (ch == 8'h2C) || // ","
+        (ch == 8'h2E) || // "."
+        (ch == 8'h2F) || // "/"
+        (ch == 8'h3A) || // ":"
+        (ch == 8'h3D) || // "="
+        (ch == 8'h3F) || // "?"
+        (ch == 8'h3B) || // ";"
+        (ch == 8'h21) || // "!"
+        (ch == 8'h2A) || // "*"
+        (ch == 8'h23) || // "#"
+        (ch == 8'h40) || // "@"
+        (ch == 8'h24) || // "$"
+        (ch == 8'h5F) || // "_"
+        (ch == 8'h25); // "%"
+    if (matched) {
+        void = parseStream.skip(1);
+    }
+    parsePubidChar = matched;
+}
+
+function bit XmlParser::parseCharData(var string data)
+{
+    // [14] CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)
+    bit matched = 1;
+    integer ch;
+
+    ENTER(CharData)
+    parseStream.beginCapture();
+    while (1) {
+        ch = parseStream.peek();
+        if (ch == -1 || ch == 8'h3C || ch == 8'h26 || parseStream.lookahead("]]>")) {
+            break;
+        }
+        void = parseStream.skip(1);
+    }
+    data = parseStream.endCapture(matched);
+    parseCharData = matched;
+    EXIT(CharData)
+}
+
+function bit XmlParser::parseComment()
+{
+    // [15] Comment ::= '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+    bit matched;
+
+    ENTER(Comment)
+    matched = parseLiteral("<!--");
+    if (matched) {
+        integer ch;
+        integer dashes = 0;
+
+        while (dashes < 2) {
+            ch = parseStream.peek();
+            if (ch == 8'h2D) { // "-"
+                ++dashes;
+            }
+            else if (ch == -1) {
+                matched = require(0, "-");
+                break;
+            }
+            else {
+                dashes = 0;
+            }
+            void = parseStream.skip(1);
+        }
+
+        if (matched) {
+            matched = parseLiteral(">", 1);
+        }
+    }
+    parseComment = matched;
+    EXIT(Comment)
+}
+
+function bit XmlParser::parsePI()
+{
+    // [16] PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+    bit matched;
+
+    ENTER(PI)
+    matched = parseLiteral("<?");
+    if (matched) {
+        string target, data;
+
+        matched = require(parsePITarget(target), "<PITarget>");
+        if (matched) {
+            if (parseS()) {
+                parseStream.beginCapture();
+                while (!parseStream.lookahead("?>")) {
+                    void = parseStream.skip(1);
+                }
+                data = parseStream.endCapture();
+            }
+            matched = parseLiteral("?>", 1);
+            if (matched) {
+                reader.contentHandler.processingInstruction(target, data);
+            }
+        }
+    }
+    parsePI = matched;
+    EXIT(PI)
+}
+
+function bit XmlParser::parsePITarget(var string target)
+{
+    // [17] PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+    bit matched;
+
+    ENTER(PITarget)
+    matched = parseName(target);
+    if (matched && target.icompare("xml") == 0) {
+        fatalError({ "Illegal PI target name ", target });
+        matched = 0;
+    }
+    parsePITarget = matched;
+    EXIT(PITarget)
+}
+
+function bit XmlParser::parseCDSect(var string data)
+{
+    // [18] CDSect ::= CDStart CData CDEnd
+    bit matched;
+
+    ENTER(CDSect)
+    matched = parseCDStart() &&
+        require(parseCData(data), "<CData>") &&
+        require(parseCDEnd(), "<CDEnd>");
+    parseCDSect = matched;
+    EXIT(CDSect)
+}
+
+function bit XmlParser::parseCDStart()
+{
+    // [19] CDStart ::= '<![CDATA['
+    parseCDStart = parseLiteral("<![CDATA[");
+}
+
+function bit XmlParser::parseCData(var string data)
+{
+    // [20] CData ::= (Char* - (Char* ']]>' Char*))
+    bit matched = 1;
+    integer ch;
+
+    ENTER(CData)
+    parseStream.beginCapture();
+    while (1) {
+        ch = parseStream.peek();
+        if (ch == -1 || parseStream.lookahead("]]>")) {
+            break;
+        }
+        void = parseStream.skip(1);
+    }
+    data = parseStream.endCapture(matched);
+    parseCData = matched;
+    EXIT(CData)
+}
+
+function bit XmlParser::parseCDEnd()
+{
+    // [21] CDEnd ::= ']]>'
+    parseCDEnd = parseLiteral("]]>");
+}
+
+function bit XmlParser::parseProlog()
+{
+    // [22] Prolog ::= XMLDecl? Misc* (Doctypedecl Misc*)?
+    bit matched;
+
+    ENTER(Prolog)
+    void = parseXMLDecl();
+    if (!ctx.gotFatalError) {
+        while (parseMisc()) {}
+        if (!ctx.gotFatalError && parseDoctypedecl()) {
+            while (parseMisc()) {}
+        }
+    }
+    matched = !ctx.gotFatalError;
+    parseProlog = matched;
+    EXIT(Prolog)
+}
+
+function bit XmlParser::parseXMLDecl()
+{
+    // [23] XMLDecl ::= '<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
+    bit matched;
+    string ver;
+    string encName;
+    bit standalone;
+
+    ENTER(XMLDecl)
+    matched = parseLiteral("<?xml") &&
+        require(parseVersionInfo(ver), "<VersionInfo>") &&
+        (parseEncodingDecl(encName) || !ctx.gotFatalError) &&
+        (parseSDDecl(standalone) || !ctx.gotFatalError) &&
+        (parseS() || !ctx.gotFatalError) &&
+        parseLiteral("?>", 1);
+    parseXMLDecl = matched;
+    EXIT(XMLDecl)
+}
+
+function bit XmlParser::parseVersionInfo(var string ver)
+{
+    // [24] VersionInfo ::= S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
+    bit matched;
+
+    ENTER(VersionInfo)
+    parseStream.beginGroup();
+    matched = parseS() && parseLiteral("version");
+    parseStream.endGroup(matched);
+    if (matched) {
+        matched = require(parseEq(), "<Eq>");
+        if (matched) {
+            if (parseLiteral(doubleQuote)) {
+                matched = require(parseVersionNum(ver), "<VersionNum>");
+                if (matched) {
+                    matched = parseLiteral(doubleQuote, 1);
+                }
+            }
+            else if (parseLiteral("'")) {
+                matched = require(parseVersionNum(ver), "<VersionNum>");
+                if (matched) {
+                    matched = parseLiteral("'", 1);
+                }
+            }
+            else {
+                matched = require(0, "' or \"");
+            }
+        }
+    }
+    parseVersionInfo = matched;
+    EXIT(VersionInfo)
+}
+
+function bit XmlParser::parseEq()
+{
+    // [25] Eq ::= S? '=' S?
+    bit matched;
+
+    ENTER(Eq)
+    parseStream.beginGroup();
+    void = parseS();
+    matched = parseLiteral("=");
+    parseStream.endGroup(matched);
+    if (matched) void = parseS();
+    parseEq = matched;
+    EXIT(Eq)
+}
+
+function bit XmlParser::parseVersionNum(var string ver)
+{
+    // [26] VersionNum ::= ([a-zA-Z0-9_.:] | '-')+
+    bit matched = 0;
+
+    ENTER(VersionNum)
+    parseStream.beginCapture();
+    while (1) {
+        integer ch;
+        ch = parseStream.peek();
+        if ((ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+            (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+            (ch >= 8'h30 && ch <= 8'h39) || // "0"-"9"
+            (ch == 8'h5F) || // "_"
+            (ch == 8'h2E) || // "."
+            (ch == 8'h3A) || // ":"
+            (ch == 8'h2D)) { // "-"
+            void = parseStream.skip(1);
+            matched = 1;
+        } else {
+            break;
+        }
+    }
+    ver = parseStream.endCapture(matched);
+    parseVersionNum = matched;
+    EXIT(VersionNum)
+}
+
+function bit XmlParser::parseMisc()
+{
+    // [27] Misc ::= Comment | PI | S
+    bit matched;
+
+    ENTER(Misc)
+    matched = parseComment() ||
+        (!ctx.gotFatalError && parsePI()) ||
+        (!ctx.gotFatalError && parseS());
+    parseMisc = matched;
+    EXIT(Misc)
+}
+
+function bit XmlParser::parseDoctypedecl()
+{
+    // OBSOLETE: [28] Doctypedecl ::= '<!DOCTYPE' S Name (S ExternalID)? S?
+    //                                ('[' (Markupdecl | DeclSep)* ']' S?)? '>'
+    // [NS13] Doctypedecl ::= '<!DOCTYPE' S QName (S ExternalID)? S?
+    //                        ('[' (Markupdecl | DeclSep)* ']' S?)? '>'
+    bit matched;
+    string prefix;
+    string localName;
+    string publicId;
+    string systemId;
+
+    ENTER(Doctypedecl)
+    matched = parseLiteral("<!DOCTYPE") &&
+        require(parseS(), "<S>");
+    if (matched) {
+        matched = require(parseQName(prefix, localName), "<QName>");
+        if (matched) {
+            void = parseS();
+
+            if (parseExternalID(publicId, systemId)) {
+#if 0
+                SaxInputSource dtdSource;
+                XmlParser dtdParser;
+
+                dtdSource = reader.entityResolver.resolveEntity(publicId, systemId);
+                if (dtdSource == null) {
+                    dtdSource = getXmlInputSource(systemId);
+                }
+
+                dtdParser = new(reader, ctx, dtdSource);
+                matched = require(dtdParser.parseExtSubset(), "<ExtSubset>");
+#endif
+                if (matched) {
+                    void = parseS();
+                }
+            }
+
+            if (matched && parseLiteral("[")) {
+
+                while ((!ctx.gotFatalError && parseMarkupdecl()) ||
+                    (!ctx.gotFatalError && parseDeclSep())) {}
+
+                matched = parseLiteral("]", 1);
+
+                if (matched) {
+                    void = parseS();
+                }
+            }
+
+            if (matched) {
+                matched = parseLiteral(">", 1);
+            }
+        }
+    }
+    parseDoctypedecl = matched;
+    EXIT(Doctypedecl)
+}
+
+function bit XmlParser::parseDeclSep()
+{
+    // [28a] DeclSep ::= PEReference | S
+    bit matched;
+    string name;
+
+    ENTER(DeclSep)
+    if (parsePEReference(name)) {
+        parseStream.inject({ " ", expandPEReference(name), " " });
+        matched = !ctx.gotFatalError;
+    } else {
+        matched = (!ctx.gotFatalError && parseS());
+    }
+    parseDeclSep = matched;
+    EXIT(DeclSep)
+}
+
+function bit XmlParser::parseMarkupdecl()
+{
+    // [29] Markupdecl ::= Elementdecl | AttlistDecl | EntityDecl | NotationDecl | PI | Comment
+    bit matched;
+
+    ENTER(Markupdecl)
+    matched = parseElementdecl() ||
+        (!ctx.gotFatalError && parseAttlistDecl()) ||
+        (!ctx.gotFatalError && parseEntityDecl()) ||
+        (!ctx.gotFatalError && parseNotationDecl()) ||
+        (!ctx.gotFatalError && parsePI()) ||
+        (!ctx.gotFatalError && parseComment());
+    parseMarkupdecl = matched;
+    EXIT(Markupdecl)
+}
+
+function bit XmlParser::parseExtSubset()
+{
+    // [30] ExtSubset ::= TextDecl? ExtSubsetDecl
+    bit matched;
+
+    ENTER(ExtSubset)
+    matched = parseTextDecl();
+    if (matched) {
+        matched = require(parseExtSubsetDecl(), "<ExtSubsetDecl>");
+    } else {
+        matched = parseExtSubsetDecl();
+    }
+    parseExtSubset = matched;
+    EXIT(ExtSubset)
+}
+
+function bit XmlParser::parseExtSubsetDecl()
+{
+    // [31] ExtSubsetDecl ::= (Markupdecl | ConditionalSect | DeclSep)*
+    bit matched = 1;
+
+    ENTER(ExtSubsetDecl)
+    while ((!ctx.gotFatalError && parseMarkupdecl()) ||
+        (!ctx.gotFatalError && parseConditionalSect()) ||
+        (!ctx.gotFatalError && parseDeclSep())) {}
+    parseExtSubsetDecl = matched;
+    EXIT(ExtSubsetDecl)
+}
+
+function bit XmlParser::parseSDDecl(var bit standalone)
+{
+    // [32] SDDecl ::= S 'standalone' Eq (("'" ('yes' | 'no') "'") | ('"' ('yes' | 'no') '"'))
+    bit matched;
+
+    ENTER(SDDecl)
+    parseStream.beginGroup();
+    matched = parseS() && parseLiteral("standalone");
+    parseStream.endGroup(matched);
+    if (matched) {
+        matched = require(parseEq(), "<Eq>");
+        if (matched) {
+            if (parseLiteral(doubleQuote)) {
+                matched = require(parseYesNo(standalone), "yes or no");
+                if (matched) {
+                    matched = parseLiteral(doubleQuote, 1);
+                }
+            }
+            else if (parseLiteral("'")) {
+                matched = require(parseYesNo(standalone), "yes or no");
+                if (matched) {
+                    matched = parseLiteral("'", 1);
+                }
+            }
+            else {
+                matched = require(0, "' or \"");
+            }
+        }
+    }
+    parseSDDecl = matched;
+    EXIT(SDDecl)
+}
+
+function bit XmlParser::parseYesNo(var bit yes)
+{
+    yes = parseLiteral("yes");
+    parseYesNo = yes || parseLiteral("no");
+}
+
+function bit XmlParser::parseElement()
+{
+    // [39] Element ::= EmptyElemTag | STag Content ETag
+    // OBSOLETE: [40] STag ::= '<' Name (S Attribute)* S? '>'
+    // OBSOLETE: [44] EmptyElemTag ::= '<' Name (S Attribute)* S? '/>'
+    // [NS9] STag ::=  '<' QName (S Attribute)* S? '>'
+    // [NS11] EmptyElemTag ::=  '<' QName (S Attribute)* S? '/>'
+
+    // REFACTORED: Element ::= '<' QName (S Attribute)* S? ('>' Content ETag | '/>')
+
+    bit matched;
+    string sPrefix, sLocalName;
+    string ePrefix, eLocalName;
+
+    ENTER(Element)
+    parseStream.beginGroup();
+    matched = parseLiteral("<") && parseQName(sPrefix, sLocalName);
+    parseStream.endGroup(matched);
+    if (matched) {
+        XmlAttributes attrs = new;
+        XmlNameScope elemScope = null;
+
+        while (parseS() && parseAttribute(attrs, elemScope)) {}
+        if (!ctx.gotFatalError) {
+            XmlNameScope prevScope;
+            string elemURI = null;
+            string sQname;
+
+            prevScope = ctx.lastScope;
+            if (elemScope != null) {
+                ctx.lastScope = elemScope;
+            }
+
+            if (ctx.lastScope != null) {
+                elemURI = ctx.lastScope.lookupURI(sPrefix);
+            }
+            attrs.resolveURIs(ctx.lastScope);
+
+            sQname = (sPrefix != null) ? { sPrefix, ":", sLocalName } : sLocalName;
+
+            void = parseS();
+            if (parseLiteral(">")) {
+                reader.contentHandler.startElement(elemURI, sLocalName, sQname, attrs);
+                matched = require(parseContent(), "<Content>");
+                if (matched) {
+                    matched = require(parseETag(ePrefix, eLocalName), "<ETag>");
+                    if (matched) {
+                        if (ePrefix == sPrefix && eLocalName == sLocalName) {
+                            reader.contentHandler.endElement(elemURI, sLocalName, sQname);
+                        } else {
+                            string eQname;
+
+                            eQname = (ePrefix != null) ? { ePrefix, ":", eLocalName } : eLocalName;
+                            fatalError(psprintf("Start tag (%s) does not match end tag (%s)",
+                                sQname, eQname));
+                        }
+                    }
+                }
+            }
+            else if (parseLiteral("/>")) {
+                reader.contentHandler.startElement(elemURI, sLocalName, sQname, attrs);
+                reader.contentHandler.endElement(elemURI, sLocalName, sQname);
+            }
+            else {
+                matched = require(0, "> or />");
+            }
+
+            if (matched && elemScope != null) {
+                StrSet prefixes;
+                StrIterator i;
+
+                prefixes = elemScope.getPrefixes();
+                i = prefixes.iterator();
+                while (i.hasNext()) {
+                    string prefix = i.next();
+                    reader.contentHandler.endPrefixMapping(prefix);
+                }
+            }
+            ctx.lastScope = prevScope;
+        } else {
+            matched = 0;
+        }
+
+        attrs.destroy();
+    }
+    parseElement = matched;
+    EXIT(Element)
+}
+
+function bit XmlParser::parseAttribute(XmlAttributes attrs, var XmlNameScope elemScope)
+{
+    // OBSOLETE: [41] Attribute ::= Name Eq AttValue
+    // [NS12] Attribute ::= NSAttName Eq AttValue | QName Eq AttValue
+
+    // REFACTORED: Attribute ::= (NSAttName | QName) Eq AttValue
+
+    bit matched;
+    bit nsdecl;
+    string prefix;
+    string localName;
+    string value;
+
+    ENTER(Attribute)
+    nsdecl = parseNSAttName(prefix);
+    matched = (nsdecl || (!ctx.gotFatalError && parseQName(prefix, localName))) &&
+        require(parseEq(), "<Eq>") &&
+        require(parseAttValue(value), "<AttValue>");
+    if (matched) {
+        if (nsdecl) {
+            if (elemScope == null) {
+                elemScope = new(ctx.lastScope);
+            }
+            elemScope.addURI(prefix, value);
+            reader.contentHandler.startPrefixMapping(prefix, value);
+        } else {
+            // TODO: lookup type from DTD
+            attrs.addAttr(prefix, localName, "CDATA", value);
+        }
+    }
+    parseAttribute = matched;
+    EXIT(Attribute)
+}
+
+function bit XmlParser::parseETag(var string prefix, var string localName)
+{
+    // OBSOLETE: [42] ETag ::= '</' Name S? '>'
+    // [NS10] ETag ::=  '</' QName S? '>'
+    bit matched;
+
+    ENTER(ETag)
+    matched = parseLiteral("</") &&
+        require(parseQName(prefix, localName), "<QName>") &&
+        (parseS() || !ctx.gotFatalError) &&
+        parseLiteral(">", 1);
+    parseETag = matched;
+    EXIT(ETag)
+}
+
+function bit XmlParser::parseContent()
+{
+    // [43] Content ::= CharData? ((Element | Reference | CDSect | PI | Comment) CharData?)*
+    // [67] Reference ::= EntityRef | CharRef
+    bit matched;
+    string chars;
+    string name;
+
+    ENTER(Content)
+    while (1) {
+        chars = null;
+        void = parseCharData(chars);
+        if (chars != null && chars.len() > 0) {
+            reader.contentHandler.characters(chars);
+        }
+
+        if (parseElement() ||
+            (!ctx.gotFatalError && parsePI()) ||
+            (!ctx.gotFatalError && parseComment())) {
+            continue;
+        }
+
+        chars = null;
+        if ((!ctx.gotFatalError && parseCharRef(chars)) ||
+            (!ctx.gotFatalError && parseCDSect(chars))) {
+
+            if (chars != null && chars.len() > 0) {
+                reader.contentHandler.characters(chars);
+            }
+            continue;
+        }
+
+        if (!ctx.gotFatalError && parseEntityRef(name)) {
+            chars = expandEntityRef(name);
+            if (!ctx.gotFatalError) {
+                parseStream.inject(chars);
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        break;
+    }
+    matched = !ctx.gotFatalError;
+    parseContent = matched;
+    EXIT(Content)
+}
+
+function bit XmlParser::parseElementdecl()
+{
+    // OBSOLETE: [45] Elementdecl ::= '<!ELEMENT' S Name S Contentspec S? '>'
+    // [NS14] Elementdecl ::= '<!ELEMENT' S QName S Contentspec S? '>'
+    bit matched;
+    string prefix;
+    string localName;
+
+    ENTER(Elementdecl)
+    matched = parseLiteral("<!ELEMENT") &&
+        require(parseS(), "<S>") &&
+        require(parseQName(prefix, localName), "<QName>") &&
+        require(parseS(), "<S>") &&
+        require(parseContentspec(), "<Contentspec>") &&
+        (parseS() || !ctx.gotFatalError) &&
+        parseLiteral(">", 1);
+    if (matched) {
+        reader.logIntf.printLogMsg(LS_DEBUG,
+            psprintf("Declared element %s:%s", prefix, localName));
+    }
+    parseElementdecl = matched;
+    EXIT(Elementdecl)
+}
+
+function bit XmlParser::parseContentspec()
+{
+    // [46] Contentspec ::= 'EMPTY' | 'ANY' | Mixed | Children
+    bit matched;
+
+    ENTER(Contentspec)
+    matched = parseLiteral("EMPTY") ||
+        parseLiteral("ANY") ||
+        parseMixed() ||
+        (!ctx.gotFatalError && parseChildren());
+    parseContentspec = matched;
+    EXIT(Contentspec)
+}
+
+function bit XmlParser::parseChildren()
+{
+    // [47] Children ::= (Choice | Seq) ('?' | '*' | '+')?
+    bit matched;
+
+    ENTER(Children)
+    matched = parseChoice() ||
+        (!ctx.gotFatalError && parseSeq());
+    if (matched) {
+        void = parseLiteral("?") || parseLiteral("*") || parseLiteral("+");
+    }
+    parseChildren = matched;
+    EXIT(Children)
+}
+
+function bit XmlParser::parseCp()
+{
+    // OBSOLETE: [48] Cp ::= (Name | Choice | Seq) ('?' | '*' | '+')?
+    // [NS15] Cp ::= (QName | Choice | Seq) ('?' | '*' | '+')?
+    bit matched;
+    string prefix;
+    string localName;
+
+    ENTER(Cp)
+    matched = parseQName(prefix, localName) ||
+        (!ctx.gotFatalError && parseChoice()) ||
+        (!ctx.gotFatalError && parseSeq());
+    if (matched) {
+        void = parseLiteral("?") || parseLiteral("*") || parseLiteral("+");
+    }
+    parseCp = matched;
+    EXIT(Cp)
+}
+
+function bit XmlParser::parseChoice()
+{
+    // [49] Choice ::= '(' S? Cp ( S? '|' S? Cp )+ S? ')'
+    bit matched;
+
+    ENTER(Choice)
+    matched = parseLiteral("(") &&
+        (parseS() || !ctx.gotFatalError) &&
+        require(parseCp(), "<Cp>");
+    while (matched) {
+        void = parseS();
+        if (parseLiteral("|")) {
+            void = parseS();
+            matched = require(parseCp(), "<Cp>");
+        } else {
+            break;
+        }
+    }
+    if (matched) {
+        matched = parseLiteral(")", 1);
+    }
+    parseChoice = matched;
+    EXIT(Choice)
+}
+
+function bit XmlParser::parseSeq()
+{
+    // [50] Seq ::= '(' S? Cp ( S? ',' S? Cp )* S? ')'
+    bit matched;
+
+    ENTER(Seq)
+    matched = parseLiteral("(") &&
+        (parseS() || !ctx.gotFatalError) &&
+        require(parseCp(), "<Cp>");
+    while (matched) {
+        void = parseS();
+        if (parseLiteral(",")) {
+            void = parseS();
+            matched = require(parseCp(), "<Cp>");
+        } else {
+            break;
+        }
+    }
+    if (matched) {
+        matched = parseLiteral(")", 1);
+    }
+    parseSeq = matched;
+    EXIT(Seq)
+}
+
+function bit XmlParser::parseMixed()
+{
+    // OBSOLETE: [51] Mixed ::= '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*' | '(' S? '#PCDATA' S? ')'
+    // [NS16] Mixed ::= '(' S? '#PCDATA' (S? '|' S? QName)* S? ')*' | '(' S? '#PCDATA' S? ')'
+
+    bit matched;
+    bit gotName = 0;
+
+    ENTER(Mixed)
+    parseStream.beginGroup();
+    matched = parseLiteral("(") &&
+        (parseS() || !ctx.gotFatalError) &&
+        parseLiteral("#PCDATA");
+    parseStream.endGroup(matched);
+    while (matched) {
+        string prefix;
+        string localName;
+
+        void = parseS();
+        if (parseLiteral("|")) {
+            void = parseS();
+            matched = require(parseQName(prefix, localName), "<QName>");
+            gotName = 1;
+        } else {
+            break;
+        }
+    }
+    if (matched) {
+        matched = parseLiteral(gotName ? ")*" : ")", 1);
+    }
+    parseMixed = matched;
+    EXIT(Mixed)
+}
+
+function bit XmlParser::parseAttlistDecl()
+{
+    // OBSOLETE: [52] AttlistDecl ::= '<!ATTLIST' S Name AttDef* S? '>'
+    // [NS17] AttlistDecl ::= '<!ATTLIST' S QName AttDef* S? '>'
+    bit matched;
+    string prefix;
+    string localName;
+
+    ENTER(AttlistDecl)
+    matched = parseLiteral("<!ATTLIST") &&
+        require(parseS(), "<S>") &&
+        require(parseQName(prefix, localName), "<QName>");
+    if (matched) {
+        while (parseAttDef()) {}
+        matched = !ctx.gotFatalError &&
+            (parseS() || !ctx.gotFatalError) &&
+            parseLiteral(">", 1);
+    }
+    if (matched) {
+        reader.logIntf.printLogMsg(LS_DEBUG,
+            psprintf("Declared attribute %s:%s", prefix, localName));
+    }
+    parseAttlistDecl = matched;
+    EXIT(AttlistDecl)
+}
+
+function bit XmlParser::parseAttDef()
+{
+    // OBSOLETE: [53] AttDef ::= S Name S AttType S DefaultDecl
+    // [NS18] AttDef ::= S (NSAttName | QName) S AttType S DefaultDecl
+    bit matched;
+    bit nsdecl;
+    string prefix;
+    string localName;
+
+    ENTER(AttDef)
+    parseStream.beginGroup();
+    matched = parseS();
+    if (matched) {
+        nsdecl = parseNSAttName(prefix);
+        matched = nsdecl || (!ctx.gotFatalError && parseQName(prefix, localName));
+    }
+    parseStream.endGroup(matched);
+    parseAttDef = matched &&
+        require(parseS(), "<S>") &&
+        require(parseAttType(), "<AttType>") &&
+        require(parseS(), "<S>") &&
+        require(parseDefaultDecl(), "<DefaultDecl>");
+    EXIT(AttDef)
+}
+
+function bit XmlParser::parseAttType()
+{
+    // [54] AttType ::= StringType | TokenizedType | EnumeratedType
+    bit matched;
+    string type;
+
+    ENTER(AttType)
+    matched = parseStringType(type) ||
+        (!ctx.gotFatalError && parseTokenizedType(type)) ||
+        (!ctx.gotFatalError && parseEnumeratedType());
+    parseAttType = matched;
+    EXIT(AttType)
+}
+
+function bit XmlParser::parseStringType(var string type)
+{
+    // [55] StringType ::= 'CDATA'
+    bit matched;
+
+    ENTER(StringType)
+    parseStream.beginCapture();
+    matched = parseLiteral("CDATA");
+    type = parseStream.endCapture(matched);
+    parseStringType = matched;
+    EXIT(StringType)
+}
+
+function bit XmlParser::parseTokenizedType(var string type)
+{
+    // [56] TokenizedType ::= 'ID' | 'IDREF' | 'IDREFS' | 'ENTITY' |
+    //                        'ENTITIES' | 'NMTOKEN' | 'NMTOKENS'
+    bit matched;
+
+    ENTER(TokenizedType)
+    parseStream.beginCapture();
+    matched =
+        parseLiteral("IDREFS") ||
+        parseLiteral("IDREF") ||
+        parseLiteral("ID") ||
+        parseLiteral("ENTITIES") ||
+        parseLiteral("ENTITY") ||
+        parseLiteral("NMTOKENS") ||
+        parseLiteral("NMTOKEN");
+    type = parseStream.endCapture(matched);
+    parseTokenizedType = matched;
+    EXIT(TokenizedType)
+}
+
+function bit XmlParser::parseEnumeratedType()
+{
+    // [57] EnumeratedType ::= NotationType | Enumeration
+    bit matched;
+
+    ENTER(EnumeratedType)
+    matched = parseNotationType() ||
+        (!ctx.gotFatalError && parseEnumeration());
+    parseEnumeratedType = matched;
+    EXIT(EnumeratedType)
+}
+
+function bit XmlParser::parseNotationType()
+{
+    // [58] NotationType ::= 'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'
+    bit matched;
+    string name;
+
+    ENTER(NotationType)
+    matched = parseLiteral("NOTATION") &&
+        require(parseS(), "<S>") &&
+        parseLiteral("(", 1) &&
+        (parseS() || !ctx.gotFatalError) &&
+        require(parseName(name), "<Name>");
+    while (matched) {
+        void = parseS();
+        if (parseLiteral("|")) {
+            void = parseS();
+            matched = require(parseName(name), "<Name>");
+        } else {
+            break;
+        }
+    }
+    if (matched) {
+        matched = parseLiteral(")", 1);
+    }
+    parseNotationType = matched;
+    EXIT(NotationType)
+}
+
+function bit XmlParser::parseEnumeration()
+{
+    // [59] Enumeration ::= '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
+    bit matched;
+    string nmtoken;
+
+    ENTER(Enumeration)
+    matched = parseLiteral("(") &&
+        (parseS() || !ctx.gotFatalError) &&
+        require(parseNmtoken(nmtoken), "<Nmtoken>");
+    while (matched) {
+        void = parseS();
+        if (parseLiteral("|")) {
+            void = parseS();
+            matched = require(parseNmtoken(nmtoken), "<Nmtoken>");
+        } else {
+            break;
+        }
+    }
+    if (matched) {
+        matched = parseLiteral(")", 1);
+    }
+    parseEnumeration = matched;
+    EXIT(Enumeration)
+}
+
+function bit XmlParser::parseDefaultDecl()
+{
+    // [60] DefaultDecl ::= '#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)
+    bit matched;
+    string value;
+
+    ENTER(DefaultDecl)
+    matched = parseLiteral("#REQUIRED") ||
+        parseLiteral("#IMPLIED") ||
+        (parseLiteral("#FIXED") &&
+            require(parseS(), "<S>") &&
+            require(parseAttValue(value), "<AttValue>")) ||
+        require(parseAttValue(value), "<AttValue>");
+    parseDefaultDecl = matched;
+    EXIT(DefaultDecl)
+}
+
+function bit XmlParser::parseConditionalSect()
+{
+    // [61] ConditionalSect ::= IncludeSect | IgnoreSect
+    // [62] IncludeSect ::= '<![' S? 'INCLUDE' S? '[' ExtSubsetDecl ']]>'
+    // [63] IgnoreSect ::= '<![' S? 'IGNORE' S? '[' IgnoreSectContents* ']]>'
+
+    // REFACTORED: ConditionalSect ::= '<![' S? ( 'INCLUDE' S? '[' ExtSubsetDecl |
+    //   'IGNORE' S? '[' IgnoreSectContents* ) ']]>'
+
+    bit matched;
+
+    ENTER(ConditionalSect)
+    matched = parseLiteral("<![") &&
+        (parseS() || !ctx.gotFatalError);
+    if (matched) {
+        if (parseLiteral("INCLUDE")) {
+            void = parseS();
+            matched = parseLiteral("[", 1) &&
+                require(parseExtSubsetDecl(), "<ExtSubsetDecl>");
+        }
+        else if (parseLiteral("IGNORE")) {
+            void = parseS();
+            matched = parseLiteral("[", 1);
+            while (matched) {
+                void = parseIgnoreSectContents();
+                matched = !ctx.gotFatalError;
+            }
+        }
+        else {
+            matched = require(0, "INCLUDE or IGNORE");
+        }
+        if (matched) {
+            matched = parseLiteral("]]>", 1);
+        }
+    }
+    parseConditionalSect = matched;
+    EXIT(ConditionalSect)
+}
+
+function bit XmlParser::parseIgnoreSectContents()
+{
+    // [64] IgnoreSectContents ::= Ignore ('<![' IgnoreSectContents ']]>' Ignore)*
+    bit matched;
+
+    ENTER(IgnoreSectContents)
+    matched = parseIgnore();
+    while (matched) {
+        if (!parseLiteral("<![")) break;
+        matched = require(parseIgnoreSectContents(), "IgnoreSectContents") &&
+            parseLiteral("]]>", 1) &&
+            require(parseIgnore(), "Ignore");
+    }
+    parseIgnoreSectContents = matched;
+    EXIT(IgnoreSectContents)
+}
+
+function bit XmlParser::parseIgnore()
+{
+    // [65] Ignore ::= Char* - (Char* ('<![' | ']]>') Char*)
+    bit matched = 1;
+    integer ch;
+
+    ENTER(Ignore)
+    while (1) {
+        ch = parseStream.peek();
+        if (ch == -1 || parseStream.lookahead("<![") || parseStream.lookahead("]]>")) {
+            break;
+        }
+        void = parseStream.skip(1);
+    }
+    parseIgnore = matched;
+    EXIT(Ignore)
+}
+
+function bit XmlParser::parseCharRef(var string char)
+{
+    // [66] CharRef ::= '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
+    bit matched;
+    integer code;
+
+    ENTER(CharRef)
+    code = 0;
+    matched = parseLiteral("&#");
+    if (matched) {
+        bit gotDigit = 0;
+        bit hex;
+        integer ch;
+
+        hex = parseLiteral("x");
+        while (1) {
+            integer digit = -1;
+
+            ch = parseStream.peek();
+            if (ch >= 8'h30 && ch <= 8'h39) { // "0"-"9"
+                digit = ch - 8'h30;
+            }
+            else if (hex) {
+                if (ch >= 8'h41 && ch <= 8'h46) { // "A"-"F"
+                    digit = ch - 8'h41 + 10;
+                }
+                else if (ch >= 8'h61 && ch <= 8'h66) { // "a"-"f"
+                    digit = ch - 8'h61 + 10;
+                }
+            }
+
+            if (digit >= 0) {
+                code = code * (hex ? 16 : 10) + digit;
+                void = parseStream.skip(1);
+                gotDigit = 1;
+            } else {
+                break;
+            }
+        }
+        if (!gotDigit) {
+            matched = require(0, "digit");
+        }
+        else {
+            matched = parseLiteral(";", 1);
+            if (matched) {
+                if (code <= 8'hFF) {
+                    char.bittostr(code);
+                } else {
+                    // unmappable character
+                    char = "?";
+                }
+            }
+        }
+    }
+    parseCharRef = matched;
+    EXIT(CharRef)
+}
+
+function bit XmlParser::parseEntityRef(var string name)
+{
+    // [68] EntityRef ::= '&' Name ';'
+    bit matched;
+
+    ENTER(EntityRef)
+    matched = parseLiteral("&") &&
+        require(parseName(name), "<Name>") &&
+        parseLiteral(";", 1);
+    parseEntityRef = matched;
+    EXIT(EntityRef)
+}
+
+function string XmlParser::expandEntityRef(string name)
+{
+    XmlEntityInfo entity = ctx.docType.lookupGenEntity(name);
+    if (entity != null) {
+        if (!entity.isExternal()) {
+            expandEntityRef = entity.value;
+        }
+        else if (!entity.isUnparsed()) {
+            // TODO: handle external entity
+            warning({ "Unhandled reference to external entity ", name });
+            expandEntityRef = "";
+        }
+        else {
+            fatalError({ "Reference to unparsed entity ", name });
+            expandEntityRef = null;
+        }
+    }
+    else {
+        nonfatalError({ "Reference to undefined entity ", name });
+        expandEntityRef = "";
+    }
+}
+
+function bit XmlParser::parsePEReference(var string name)
+{
+    // [69] PEReference ::= '%' Name ';'
+    bit matched;
+
+    ENTER(PEReference)
+    matched = parseLiteral("%") &&
+        require(parseName(name), "<Name>") &&
+        parseLiteral(";", 1);
+    parsePEReference = matched;
+    EXIT(PEReference)
+}
+
+function string XmlParser::expandPEReference(string name)
+{
+    XmlEntityInfo entity = ctx.docType.lookupParamEntity(name);
+    if (entity != null) {
+        string value;
+
+        if (!entity.isExternal()) {
+            expandPEReference = entity.value;
+        }
+        else {
+            // TODO: handle external entity
+            warning({ "Unhandled reference to external entity ", name });
+            expandPEReference = "";
+        }
+    }
+    else {
+        nonfatalError({ "Reference to undefined entity ", name });
+        expandPEReference = "";
+    }
+}
+
+function bit XmlParser::parseEntityDecl()
+{
+    // [70] EntityDecl ::= GEDecl | PEDecl
+    // [71] GEDecl ::= '<!ENTITY' S Name S EntityDef S? '>'
+    // [72] PEDecl ::= '<!ENTITY' S '%' S Name S PEDef S? '>'
+
+    // REFACTORED: EntityDecl ::= '<!ENTITY' S ('%' S Name S PEDef | Name S EntityDef) S? '>'
+
+    bit matched;
+
+    ENTER(EntityDecl)
+    matched = parseLiteral("<!ENTITY") &&
+        require(parseS(), "<S>");
+    if (matched) {
+        string name;
+
+        if (parseLiteral("%")) {
+            matched = require(parseS(), "<S>") &&
+                require(parseName(name), "<Name>") &&
+                require(parseS(), "<S>") &&
+                require(parsePEDef(name), "<PEDef>");
+        } else {
+            matched = require(parseName(name), "<Name>") &&
+                require(parseS(), "<S>") &&
+                require(parseEntityDef(name), "<EntityDef>");
+        }
+        if (matched) {
+            matched = (parseS() || !ctx.gotFatalError) &&
+                parseLiteral(">", 1);
+        }
+    }
+    parseEntityDecl = matched;
+    EXIT(EntityDecl)
+}
+
+function bit XmlParser::parseEntityDef(string name)
+{
+    // [73] EntityDef ::= EntityValue | (ExternalID NDataDecl?)
+    bit matched;
+    string value;
+    string publicId;
+    string systemId;
+    string ndata;
+
+    ENTER(EntityDef)
+    matched = parseEntityValue(value) ||
+        (!ctx.gotFatalError && parseExternalID(publicId, systemId) &&
+            (parseNDataDecl(ndata) || !ctx.gotFatalError));
+    if (matched) {
+        if (value != null) {
+            reader.logIntf.printLogMsg(LS_DEBUG,
+                psprintf("Declared general entity %s: value=%s",
+                name, value));
+            ctx.docType.addGenEntity(name, value);
+        } else {
+            reader.logIntf.printLogMsg(LS_DEBUG,
+                psprintf("Declared external general entity %s: public=%s, system=%s, ndata=%s",
+                name, publicId, systemId, ndata));
+            ctx.docType.addGenEntityExt(name, publicId, systemId, ndata);
+            if (ndata != null) {
+                if (ctx.docType.lookupNotation(name) == null) {
+                    nonfatalError({ "Reference to undefined notation ", name });
+                }
+                reader.dtdHandler.unparsedEntityDecl(name, publicId, systemId, ndata);
+            }
+        }
+    }
+    parseEntityDef = matched;
+    EXIT(EntityDef)
+}
+
+function bit XmlParser::parsePEDef(string name)
+{
+    // [74] PEDef ::= EntityValue | ExternalID
+    bit matched;
+    string value;
+    string publicId;
+    string systemId;
+
+    ENTER(PEDef)
+    matched = parseEntityValue(value) ||
+        (!ctx.gotFatalError && parseExternalID(publicId, systemId));
+    if (matched) {
+        if (value != null) {
+            reader.logIntf.printLogMsg(LS_DEBUG,
+                psprintf("Declared parameter entity %s: value=%s",
+                name, value));
+            ctx.docType.addParamEntity(name, value);
+        } else {
+            reader.logIntf.printLogMsg(LS_DEBUG,
+                psprintf("Declared external parameter entity %s: public=%s, system=%s",
+                name, publicId, systemId));
+            ctx.docType.addParamEntityExt(name, publicId, systemId);
+        }
+    }
+    parsePEDef = matched;
+    EXIT(PEDef)
+}
+
+function bit XmlParser::parseExternalID(var string publicId, var string systemId)
+{
+    // [75] ExternalID ::= 'SYSTEM' S SystemLiteral |
+    //                     'PUBLIC' S PubidLiteral S SystemLiteral
+    bit matched;
+
+    ENTER(ExternalID)
+    matched =
+        (parseLiteral("SYSTEM") &&
+            require(parseS(), "<S>") &&
+            require(parseSystemLiteral(systemId), "<SystemLiteral>")) ||
+        (!ctx.gotFatalError && parseLiteral("PUBLIC") &&
+            require(parseS(), "<S>") &&
+            require(parsePubidLiteral(publicId), "<PubidLiteral>") &&
+            require(parseS(), "<S>") &&
+            require(parseSystemLiteral(systemId), "<SystemLiteral>"));
+    parseExternalID = matched;
+    EXIT(ExternalID)
+}
+
+function bit XmlParser::parseNDataDecl(var string ndata)
+{
+    // [76] NDataDecl ::= S 'NDATA' S Name
+    bit matched;
+
+    ENTER(NDataDecl)
+    parseStream.beginGroup();
+    matched = parseS() && parseLiteral("NDATA");
+    parseStream.endGroup(matched);
+    parseNDataDecl = matched &&
+        require(parseS(), "<S>") &&
+        require(parseName(ndata), "<Name>");
+    EXIT(NDataDecl)
+}
+
+function bit XmlParser::parseTextDecl()
+{
+    // [77] TextDecl ::= '<?xml' VersionInfo? EncodingDecl S? '?>'
+    bit matched;
+    string ver;
+    string encName;
+
+    ENTER(TextDecl)
+    matched = parseLiteral("<?xml") &&
+        (parseVersionInfo(ver) || !ctx.gotFatalError) &&
+        require(parseEncodingDecl(encName), "<EncodingDecl>") &&
+        (parseS() || !ctx.gotFatalError) &&
+        parseLiteral("?>", 1);
+    parseTextDecl = matched;
+    EXIT(TextDecl)
+}
+
+function bit XmlParser::parseExtParsedEnt()
+{
+    // [78] ExtParsedEnt ::= TextDecl? Content
+    bit matched;
+
+    ENTER(ExtParsedEnt)
+    matched = parseTextDecl();
+    if (matched) {
+        matched = require(parseContent(), "<Content>");
+    } else {
+        matched = parseContent();
+    }
+    parseExtParsedEnt = matched;
+    EXIT(ExtParsedEnt)
+}
+
+function bit XmlParser::parseEncodingDecl(var string encName)
+{
+    // [80] EncodingDecl ::= S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
+    bit matched;
+
+    ENTER(EncodingDecl)
+    parseStream.beginGroup();
+    matched = parseS() && parseLiteral("encoding");
+    parseStream.endGroup(matched);
+    if (matched) {
+        matched = require(parseEq(), "<Eq>");
+        if (matched) {
+            if (parseLiteral(doubleQuote)) {
+                matched = require(parseEncName(encName), "<EncName>") &&
+                    parseLiteral(doubleQuote, 1);
+            }
+            else if (parseLiteral("'")) {
+                matched = require(parseEncName(encName), "<EncName>") &&
+                    parseLiteral("'", 1);
+            }
+            else {
+                matched = require(0, "' or \"");
+            }
+        }
+    }
+    parseEncodingDecl = matched;
+    EXIT(EncodingDecl)
+}
+
+function bit XmlParser::parseEncName(var string encName)
+{
+    // [81] EncName ::= [A-Za-z] ([A-Za-z0-9._] | '-')*
+    bit matched;
+    integer ch;
+
+    ENTER(EncName)
+    ch = parseStream.peek();
+    matched =
+        (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+        (ch >= 8'h61 && ch <= 8'h7A); // "a"-"z"
+    if (matched) {
+        parseStream.beginCapture();
+        void = parseStream.skip(1);
+        while (1) {
+            ch = parseStream.peek();
+            if ((ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+                (ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+                (ch >= 8'h30 && ch <= 8'h39) || // "0"-"9"
+                (ch == 8'h2E) || // "."
+                (ch == 8'h5F) || // "_"
+                (ch == 8'h2D)) { // "-"
+                void = parseStream.skip(1);
+            } else {
+                break;
+            }
+        }
+        encName = parseStream.endCapture(matched);
+    }
+    parseEncName = matched;
+    EXIT(EncName)
+}
+
+function bit XmlParser::parseNotationDecl()
+{
+    // [82] NotationDecl ::= '<!NOTATION' S Name S (ExternalID | PublicID) S? '>'
+    bit matched;
+    string name;
+    string publicId;
+    string systemId;
+
+    ENTER(NotationDecl)
+    matched = parseLiteral("<!NOTATION") &&
+        require(parseS(), "<S>") &&
+        require(parseName(name), "<Name>") &&
+        require(parseS(), "<S>") &&
+        require(parseExternalID(publicId, systemId) ||
+            (!ctx.gotFatalError && parsePublicID(publicId)),
+            "<ExternalID> or <PublicID>") &&
+        (parseS() || !ctx.gotFatalError) &&
+        parseLiteral(">", 1);
+    if (matched) {
+        ctx.docType.addNotation(name, publicId, systemId);
+        reader.dtdHandler.notationDecl(name, publicId, systemId);
+    }
+    parseNotationDecl = matched;
+    EXIT(NotationDecl)
+}
+
+function bit XmlParser::parsePublicID(var string publicId)
+{
+    // [83] PublicID ::= 'PUBLIC' S PubidLiteral
+    bit matched;
+
+    ENTER(PublicID)
+    matched = parseLiteral("PUBLIC") &&
+        require(parseS(), "<S>") &&
+        require(parsePubidLiteral(publicId), "<PubidLiteral>");
+    parsePublicID = matched;
+    EXIT(PublicID)
+}
+
+function bit XmlParser::parseNSAttName(var string name)
+{
+    // [NS1] NSAttName ::= PrefixedAttName | DefaultAttName
+    // [NS2] PrefixedAttName ::= 'xmlns:' NCName
+    // [NS3] DefaultAttName ::= 'xmlns'
+    bit matched;
+    string name1;
+
+    ENTER(NSAttName)
+    matched = parseLiteral("xmlns");
+    if (matched) {
+        if (parseLiteral(":")) {
+            matched = require(parseNCName(name), "<NCName>");
+        } else {
+            name = null;
+        }
+    }
+    parseNSAttName = matched;
+    EXIT(NSAttName)
+}
+
+function bit XmlParser::parseNCName(var string name)
+{
+    // [NS4] NCName ::= (Letter | '_') (NCNameChar)*
+    bit matched;
+    integer ch;
+
+    ENTER(NCName)
+    ch = parseStream.peek();
+    matched =
+        (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+        (ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+        (ch == 8'h5F); // "_"
+    if (matched) {
+        parseStream.beginCapture();
+        void = parseStream.skip(1);
+        while (parseNCNameChar()) {}
+        name = parseStream.endCapture(matched);
+    }
+    parseNCName = matched;
+    EXIT(NCName)
+}
+
+function bit XmlParser::parseNCNameChar()
+{
+    // [NS5] NCNameChar ::= Letter | Digit | '.' | '-' | '_' | CombiningChar | Extender
+    bit matched;
+    integer ch;
+
+    ch = parseStream.peek();
+    matched =
+        (ch >= 8'h41 && ch <= 8'h5A) || // "A"-"Z"
+        (ch >= 8'h61 && ch <= 8'h7A) || // "a"-"z"
+        (ch >= 8'h30 && ch <= 8'h39) || // "0"-"9"
+        (ch == 8'h2E) || // "."
+        (ch == 8'h2D) || // "-"
+        (ch == 8'h5F); // "_"
+    if (matched) {
+        void = parseStream.skip(1);
+    }
+    parseNCNameChar = matched;
+}
+
+function bit XmlParser::parseQName(var string prefix, var string localName)
+{
+    // [NS6] QName ::= (Prefix ':')? LocalPart
+    // [NS7] Prefix ::= NCName
+    // [NS8] LocalPart ::= NCName
+    bit matched;
+    string name1;
+
+    ENTER(QName)
+    matched = parseNCName(name1);
+    if (matched) {
+        if (parseLiteral(":")) {
+            prefix = name1;
+            matched = require(parseNCName(localName), "<NCName>");
+        } else {
+            prefix = null;
+            localName = name1;
+        }
+    }
+    parseQName = matched;
+    EXIT(QName)
+}
+
+function bit XmlParser::parseEOF()
+{
+    integer ch;
+    ch = parseStream.peek();
+    parseEOF = (ch == -1);
+}
+
+function bit XmlParser::parseLiteral(string s, bit required = 0)
+{
+    bit matched;
+
+    ENTER(Literal)
+    matched = parseStream.lookahead(s);
+    if (matched) {
+        void = parseStream.skip(s.len());
+    }
+    else if (required) {
+        void = require(0, s);
+    }
+    parseLiteral = matched;
+    EXIT(Literal)
+}
+
+task XmlParser::warning(string msg)
+{
+    XmlError e = new(msg, locator);
+    reader.errorHandler.warning(e);
+}
+
+task XmlParser::nonfatalError(string msg)
+{
+    XmlError e = new(msg, locator);
+    reader.errorHandler.nonfatalError(e);
+}
+
+task XmlParser::fatalError(string msg)
+{
+    XmlError e = new(msg, locator);
+    reader.errorHandler.fatalError(e);
+    ctx.gotFatalError = 1;
+}
+
+function bit XmlParser::require(bit matched, string prodName)
+{
+    require = matched;
+    if (!matched) {
+        fatalError(psprintf("Expected %s", prodName));
+    }
+}
+

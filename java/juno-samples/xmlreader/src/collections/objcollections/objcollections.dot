@@ -1,0 +1,63 @@
+digraph objcollections {
+rankdir=LR;
+node [shape=record,fontname="Helvetica",fontsize=10,height=0.2,width=0.4,color=black];
+edge [dir=back,color="midnightblue",fontname="Helvetica",fontsize=10,style=solid];
+title [label="Vera Object Collection Classes"];
+
+Object [label="Object|dumpString()\nequals()\nhashCode()"];
+
+Comparator [label="[Comparator]|compare()"];
+Object -> Comparator ;
+
+ObjectIDComparator [label="ObjectIDComparator|"];
+Comparator -> ObjectIDComparator ;
+
+Collection [label="[Collection]|add()\naddAll()\nclear()\ncontains()\ncontainsAll()\nisEmpty()\niterator()\nremove()\nremoveAll()\nretainAll()\nsize()"];
+Object -> Collection ;
+
+Iterator [label="[Iterator]|hasNext()\nnext()\nremove()"];
+
+List [label="[List]|addAt()\naddAllAt()\naddFirst()\naddLast()\nget()\ngetFirst()\ngetLast()\nindexOf()\nlastIndexOf()\nlistIterator()\nlistIteratorAt()\nremoveAt()\nset()"];
+Collection -> List ;
+
+ListIterator [label="[ListIterator]|add()\nhasPrevious()\nnextIndex()\nprevious()\npreviousIndex()\nset()"];
+Iterator -> ListIterator ;
+
+ArrayList [label="ArrayList|"];
+List -> ArrayList ;
+
+LinkedList [label="LinkedList|"];
+List -> LinkedList ;
+
+Set [label="[Set]|"];
+Collection -> Set ;
+
+HashSet [label="HashSet|"];
+Set -> HashSet ;
+
+SortedSet [label="[SortedSet]|comparator()"];
+Set -> SortedSet ;
+
+TreeSet [label="TreeSet|"];
+SortedSet -> TreeSet ;
+
+Map [label="[Map]|clear()\ncontainsKey()\ncontainsValue()\nentrySet()\nfindKey()\nfindValue()\nget()\nisEmpty()\nkeySet()\nput()\nputAll()\nremove()\nsize()\nvalues()"];
+Object -> Map ;
+
+MapEntry [label="MapEntry|key\nvalue"];
+Object -> MapEntry ;
+
+HashMap [label="HashMap|"];
+Map -> HashMap ;
+
+LinkedHashMap [label="LinkedHashMap|"];
+Map -> LinkedHashMap ;
+
+SortedMap [label="[SortedMap]|comparator()"];
+Map -> SortedMap ;
+
+TreeMap [label="TreeMap|"];
+SortedMap -> TreeMap ;
+
+}
+

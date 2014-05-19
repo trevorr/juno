@@ -1,0 +1,240 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "object.vrh"
+#include "streams.vrh"
+
+////////////////////////////////////////////////////////////
+// SaxInputSource
+////////////////////////////////////////////////////////////
+
+virtual class SaxInputSource
+{
+    // Get the character stream for this input source.
+    virtual function InputStream getStream();
+
+    // Get the character encoding for a byte stream or URI.
+    virtual function string getEncoding();
+
+    // Get the public identifier for this input source.
+    virtual function string getPublicId();
+
+    // Get the system identifier for this input source.
+    virtual function string getSystemId();
+}
+
+////////////////////////////////////////////////////////////
+// SaxLocator
+////////////////////////////////////////////////////////////
+
+virtual class SaxLocator
+{
+    // Return the public identifier for the current document event.
+    virtual function string getPublicId();
+
+    // Return the system identifier for the current document event.
+    virtual function string getSystemId();
+
+    // Return the line number where the current document event ends.
+    virtual function integer getLineNumber();
+
+    // Return the column number where the current document event ends.
+    virtual function integer getColumnNumber();
+}
+
+////////////////////////////////////////////////////////////
+// SaxAttributes
+////////////////////////////////////////////////////////////
+
+virtual class SaxAttributes
+{
+    // Look up the index of an attribute by XML 1.0 qualified name.
+    virtual function integer getIndexByQName(string qName);
+
+    // Look up the index of an attribute by Namespace name.
+    virtual function integer getIndexByNSName(string uri, string localName);
+
+    // Return the number of attributes in the list.
+    virtual function integer getLength();
+
+    // Look up an attribute's local name by index.
+    virtual function string getLocalName(integer index);
+
+    // Look up an attribute's XML 1.0 qualified name by index.
+    virtual function string getQName(integer index);
+
+    // Look up an attribute's type by index.
+    virtual function string getType(integer index);
+
+    // Look up an attribute's type by XML 1.0 qualified name.
+    virtual function string getTypeByQName(string qName);
+
+    // Look up an attribute's type by Namespace name.
+    virtual function string getTypeByNSName(string uri, string localName);
+
+    // Look up an attribute's Namespace URI by index.
+    virtual function string getURI(integer index);
+
+    // Look up an attribute's value by index.
+    virtual function string getValue(integer index);
+
+    // Look up an attribute's value by XML 1.0 qualified name.
+    virtual function string getValueByQName(string qName);
+
+    // Look up an attribute's value by Namespace name.
+    virtual function string getValueByNSName(string uri, string localName);
+}
+
+////////////////////////////////////////////////////////////
+// SaxContentHandler
+////////////////////////////////////////////////////////////
+
+class SaxContentHandler
+{
+    // Receive notification of character data.
+    virtual task characters(string chars) { }
+
+    // Receive notification of the end of a document.
+    virtual task endDocument() { }
+
+    // Receive notification of the end of an element.
+    virtual task endElement(string namespaceURI, string localName, string qName) { }
+
+    // End the scope of a prefix-URI mapping.
+    virtual task endPrefixMapping(string prefix) { }
+
+    // Receive notification of ignorable whitespace in element content.
+    virtual task ignorableWhitespace(string chars) { }
+
+    // Receive notification of a processing instruction.
+    virtual task processingInstruction(string target, string data) { }
+
+    // Receive an object for locating the origin of SAX document events.
+    virtual task setDocumentLocator(SaxLocator locator) { }
+
+    // Receive notification of a skipped entity.
+    virtual task skippedEntity(string name) { }
+
+    // Receive notification of the beginning of a document.
+    virtual task startDocument() { }
+
+    // Receive notification of the beginning of an element.
+    virtual task startElement(string namespaceURI, string localName, string qName, SaxAttributes atts) { }
+
+    // Begin the scope of a prefix-URI Namespace mapping.
+    virtual task startPrefixMapping(string prefix, string uri) { }
+}
+
+////////////////////////////////////////////////////////////
+// SaxDTDHandler
+////////////////////////////////////////////////////////////
+
+class SaxDTDHandler
+{
+    // Receive notification of a notation declaration event.
+    virtual task notationDecl(string name, string publicId, string systemId) { }
+
+    // Receive notification of an unparsed entity declaration event.
+    virtual task unparsedEntityDecl(string name, string publicId, string systemId, string notationName) { }
+}
+
+////////////////////////////////////////////////////////////
+// SaxEntityResolver
+////////////////////////////////////////////////////////////
+
+class SaxEntityResolver
+{
+    // Allow the application to resolve external entities.
+    virtual function SaxInputSource resolveEntity(string publicId, string systemId) { }
+}
+
+////////////////////////////////////////////////////////////
+// SaxError
+////////////////////////////////////////////////////////////
+
+virtual class SaxError
+{
+    // Returns the message describing the error.
+    virtual function string getMessage();
+
+    // Returns the document location of the error.
+    virtual function SaxLocator getLocation();
+
+    // Returns a string containing the message and location of the error.
+    virtual function string toString();
+}
+
+////////////////////////////////////////////////////////////
+// SaxErrorHandler
+////////////////////////////////////////////////////////////
+
+class SaxErrorHandler
+{
+    // Receive notification of a warning.
+    virtual task warning(SaxError exception) { }
+
+    // Receive notification of a recoverable error.
+    virtual task nonfatalError(SaxError exception) { }
+
+    // Receive notification of a non-recoverable error.
+    virtual task fatalError(SaxError exception) { }
+}
+
+////////////////////////////////////////////////////////////
+// SaxXMLReader
+////////////////////////////////////////////////////////////
+
+virtual class SaxXMLReader
+{
+    // Return the current content handler.
+    virtual function SaxContentHandler getContentHandler();
+
+    // Return the current DTD handler.
+    virtual function SaxDTDHandler getDTDHandler();
+
+    // Return the current entity resolver.
+    virtual function SaxEntityResolver getEntityResolver();
+
+    // Return the current error handler.
+    virtual function SaxErrorHandler getErrorHandler();
+
+    // Look up the value of a feature.
+    virtual function bit getFeature(string name);
+
+    // Look up the value of a property.
+    virtual function Object getProperty(string name);
+
+    // Parse an XML document.
+    virtual task parse(SaxInputSource source);
+
+    // Allow an application to register a content event handler.
+    virtual task setContentHandler(SaxContentHandler handler);
+
+    // Allow an application to register a DTD event handler.
+    virtual task setDTDHandler(SaxDTDHandler handler);
+
+    // Allow an application to register an entity resolver.
+    virtual task setEntityResolver(SaxEntityResolver resolver);
+
+    // Allow an application to register an error event handler.
+    virtual task setErrorHandler(SaxErrorHandler handler);
+
+    // Set the state of a feature.
+    virtual task setFeature(string name, bit value);
+
+    // Set the value of a property.
+    virtual task setProperty(string name, Object value);
+}
+

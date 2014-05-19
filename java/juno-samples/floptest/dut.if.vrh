@@ -1,0 +1,16 @@
+#ifndef _INTERFACE_DUT_
+#define _INTERFACE_DUT_
+
+#define OUTPUT_EDGE  PHOLD
+#define OUTPUT_SKEW  #1
+#define INPUT_SKEW  #-1
+#define INPUT_EDGE   PSAMPLE
+
+  interface dut {
+    input  clk CLOCK hdl_node "dut_test_top.clk";
+    input  [31:0]  num_clks INPUT_EDGE INPUT_SKEW hdl_node "dut_test_top.num_clks";
+    output  [31:0]  flop_in OUTPUT_EDGE OUTPUT_SKEW hdl_node "dut_test_top.flop_in";
+    input  [31:0]  flop_out INPUT_EDGE INPUT_SKEW hdl_node "dut_test_top.flop_out";
+  }  // end of interface dut
+
+#endif

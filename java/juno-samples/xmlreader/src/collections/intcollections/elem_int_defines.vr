@@ -1,0 +1,46 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#define ELEMENT_TYPE integer
+#define ELEMENT_NULL -1
+
+#define DUMP_STRING(o) psprintf("%0d", o)
+#define EQUALS(a,b) (a == b)
+#define HASH_CODE(o) o
+#define DESTROY(o) o = -1
+
+#define ITERATOR_CLASS IntIterator
+#define EMPTY_ITERATOR_CLASS IntEmptyIterator
+#define COLLECTION_CLASS IntCollection
+
+#define LIST_ITERATOR_CLASS IntListIterator
+#define LIST_CLASS IntList
+
+#define ARRAY_LIST_ITERATOR_CLASS IntArrayListIterator
+#define ARRAY_LIST_CLASS IntArrayList
+
+#define LINKED_LIST_NODE_CLASS IntLinkedListNode
+#define LINKED_LIST_ITERATOR_CLASS IntLinkedListIterator
+#define LINKED_LIST_CLASS IntLinkedList
+
+#define SET_CLASS IntSet
+
+#define COMPARATOR_CLASS IntComparator
+
+#define SORTED_SET_CLASS IntSortedSet
+
+#define ASSOC_ARRAY_SET_CLASS IntAssocArraySet
+#define ASSOC_ARRAY_SET_MAP_CLASS IntAssocArrayMap
+

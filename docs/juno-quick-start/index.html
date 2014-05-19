@@ -1,0 +1,123 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Juno Quickstart Guide</title>
+<style type="text/css">
+<!--
+.code {
+	font-family: "Courier New", Courier, monospace;
+	font-size: 10pt;
+}
+-->
+</style>
+</head>
+
+<body>
+<h1>Juno Quick Start Guide</h1>
+<p>Copyright &copy; 2005 Newisys, Inc. Licensed under the <a href="http://opensource.org/licenses/osl-2.0.php">Open Software License version 2.0</a>. </p>
+<p>Product and company names mentioned herein may be trademarks of their respective owners.</p>
+<p>Last updated 12/18/05</p>
+<h2>Overview</h2>
+<p>The purpose of this document is to describe how to translate and run the sample programs provided with Juno as quickly as possible. </p>
+<h2>Requirements</h2>
+<p>To run the any of samples, you will need the following software installed:</p>
+<ul>
+    <li>A supported operating system
+        <ul>
+            <li>Linux (any distribution supported by a Java 5.0 JDK should work)</li>
+            <li>Microsoft Windows (2000, XP, or later) with the Cygwin environment</li>
+            <li>Apple Mac OS X</li>
+        </ul>
+    </li>
+    <li>A Java (J2SE) 5.0 JDK</li>
+    <li>Apache <a href="http://ant.apache.org">ant</a></li>
+    <li>GNU <a href="http://www.gnu.org/software/make/">Make</a></li>
+    <li><a href="http://jove.sourceforge.net">Jove</a> (Both binary and source distributions are supported. Version 1.0.2 is required to run the floptest example.)</li>
+    <li>A patched version of <a href="https://javacc.dev.java.net/">JavaCC</a>
+      <ul>
+            <li>The patch is required to implement the functionality described in <a href="http://javacc.dev.java.net/issues/show_bug.cgi?id=66">this JavaCC issue</a>.</li>
+            <li>The patch itself is available <a href="http://sourceforge.net/project/showfiles.php?group_id=147420">here</a>.</li>
+            <li>For your convenience, a patched JavaCC distribution is available in the Files section of <a href="http://sourceforge.net/projects/juno-xlat">the Juno SourceForge page</a>.</li>
+            <li>NOTE When building JavaCC 3.2 under JDK 1.5, it is necessary to add source="1.2" to the javac task in src/org/javacc/parser/build.xml.</li>
+      </ul>
+  </li>
+</ul>
+<p>Additionally, the floptest example requires:</p>
+<ul>
+    <li>A supported Verilog simulator
+        <ul>
+            <li><a href="http://www.synopsys.com/products/simulation/simulation.html">Synopsys VCS</a></li>
+            <li><a href="http://www.pragmatic-c.com/gpl-cver/">Pragmatic C GPL Cver</a><sup><a href="#Footnote2">1</a></sup></li>
+        </ul>
+    </li>
+    <li>GCC C++ compiler</li>
+</ul>
+<h2>Downloading</h2>
+<p>You can download the source distribution of Juno <a href="http://sourceforge.net/project/showfiles.php?group_id=147420">here</a>. The source distribution will have a filename of the form juno-src-1.0.zip. Unzipping this file will produce the following directory structure:</p>
+<p class="code">bin/<br />
+    docs/<br />
+    java/<br />
+</p>
+<h2><a name="EnvVars" id="EnvVars"></a>Environment Variables</h2>
+<p>To translate and run the examples, a number of environment variables are required as described below.</p>
+<h3>Required Variables </h3>
+<ul>
+    <li><span class="code">JAVA_HOME</span> should point to the root of a Java (J2SE) 5.0 JDK installation (i.e. <span class="code">${JAVA_HOME}/bin/javac</span> should exist).</li>
+    <li><span class="code">JOVE_HOME</span> should point to the root of a Jove distribution (i.e. <span class="code">${JOVE_HOME}/bin/jove.jar</span> should exist for a Jove binary distribution or <span class="code">${JOVE_HOME}/java/jove/bin</span> should exist for a Jove source distribution).</li>
+    <li><span class="code">JUNO_HOME</span> should point to the root of a Juno distribution  (i.e. <span class="code">${JUNO_HOME}/java/juno</span> should exist).</li>
+    <li><span class="code">VERA_HOME</span> should point to the root of a Vera installation (i.e. <span class="code">${VERA_HOME}/include</span> should exist).</li>
+</ul>
+<h3>Optional Variables </h3>
+<ul>
+    <li><span class="code">VCS_HOME</span> should point to the root of a VCS installation (i.e. <span class="code">${VCS_HOME}/bin/vcs</span> should exist). This variable is required only for running the floptest example with VCS.</li>
+    <li><span class="code">CVER_HOME</span> should point to the root of a cver installation (i.e. <span class="code">${CVER_HOME}/bin/cver</span> should exist). This variable is required only for running the floptest example with cver.  </li>
+</ul>
+<h2><a name="CompilingJuno" id="CompilingJuno"></a>Compiling Juno</h2>
+<p>Before running the  examples, it is necessary to compile Juno. This is accomplished by setting the required <a href="#EnvVars">environment varables</a> and the executing the following sequence of instructions<sup><a href="#Footnote1">1</a></sup>: </p>
+<blockquote>
+    <p class="code">cd $JUNO_HOME/java<br />
+        ant juno </p>
+</blockquote>
+<h2>The 'xmlreader' Example  </h2>
+<p>The Vera code for the xmlreader example can be found the <span class="code">java/juno-samples/xmlreader</span> directory. Included in this example is a Vera implementation of an XML parser, a logging infrastructure, and a set of collection classes (lists, maps, etc). The Vera program is located in <span class="code">java/juno-samples/xmlreader/src/xmlreader/xmlreadertest/xmlreadertest.vr</span>. This program reads a specified XML file and parses it, logging its progress to standard out. </p>
+<h3>Translating &amp; Running xmlreader </h3>
+<p>Once you have <a href="#CompilingJuno">compiled Juno</a>, you can run the xmlreader example. The example is run by executing the following commands:</p>
+<blockquote>
+    <p class="code">cd $JUNO_HOME/java/juno-samples<br />
+        make xmlreader
+    </p>
+</blockquote>
+<h2>The 'floptest' Example </h2>
+<p>The Vera code for the floptest example can be found at <span class="code">java/juno-samples/floptest/floptest.vr</span>. This example tries to show off a number of constructs supported by the translator. These include:</p>
+<ul>
+    <li>Signal sampling and driving</li>
+    <li>Random constraints, including post_randomize support </li>
+    <li>Passing by reference</li>
+    <li>Backwards bit indices (e.g. myreg[7:4])</li>
+    <li>Various built-in functions (e.g. printf, error, alloc) </li>
+    <li>Pre-processor macros</li>
+    <li>Fork/Join</li>
+    <li>File I/O</li>
+    <li>Mailboxes</li>
+    <li>Trigger/Sync</li>
+    <li>Associative Arrays        </li>
+</ul>
+<h3>Translating &amp; Running floptest </h3>
+<p>Once you have <a href="#CompilingJuno">compiled Juno</a>, you can run the floptest example. The example is run by executing the following commands:</p>
+<blockquote>
+    <p class="code">cd $JUNO_HOME/java/juno-samples<br />
+        make floptest</p>
+</blockquote>
+<p>The above commands assume you are using the VCS simulator. If you want to use the cver simulator instead, use the following:</p>
+<blockquote>
+    <p class="code">cd $JUNO_HOME/java/juno-samples<br />
+        make SIMULATOR=cver floptest
+    </p>
+</blockquote>
+<h2>Footnotes</h2>
+<p><a name="Footnote1" id="Footnote1"></a>1. If you are using a source distribution of Jove, you will need to compile it before compiling Juno.</p>
+<p><a name="Footnote2" id="Footnote2"></a>2. To run Jove applications with cver, a patch must be applied to the cver source code. See the <a href="http://jove.sourceforge.net/docs/jove-faq/">Jove FAQ</a> for details.</p>
+</body>
+</html>
+

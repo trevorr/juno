@@ -1,0 +1,54 @@
+digraph intcollections {
+rankdir=LR;
+node [shape=record,fontname="Helvetica",fontsize=10,height=0.2,width=0.4,color=black];
+edge [dir=back,color="midnightblue",fontname="Helvetica",fontsize=10,style=solid];
+title [label="Vera Integer Collection Classes"];
+
+Object [label="Object|dumpString()\nequals()\nhashCode()"];
+
+IntComparator [label="[IntComparator]|compare()"];
+Object -> IntComparator ;
+
+NaturalIntComparator [label="NaturalIntComparator|"];
+IntComparator -> NaturalIntComparator ;
+
+IntCollection [label="[IntCollection]|add()\naddAll()\nclear()\ncontains()\ncontainsAll()\nisEmpty()\niterator()\nremove()\nremoveAll()\nretainAll()\nsize()"];
+Object -> IntCollection ;
+
+IntIterator [label="[IntIterator]|hasNext()\nnext()\nremove()"];
+
+IntList [label="[IntList]|addAt()\naddAllAt()\naddFirst()\naddLast()\nget()\ngetFirst()\ngetLast()\nindexOf()\nlastIndexOf()\nlistIterator()\nlistIteratorAt()\nremoveAt()\nset()"];
+IntCollection -> IntList ;
+
+IntListIterator [label="[IntListIterator]|add()\nhasPrevious()\nnextIndex()\nprevious()\npreviousIndex()\nset()"];
+IntIterator -> IntListIterator ;
+
+IntArrayList [label="IntArrayList|"];
+IntList -> IntArrayList ;
+
+IntLinkedList [label="IntLinkedList|"];
+IntList -> IntLinkedList ;
+
+IntSet [label="[IntSet]|"];
+IntCollection -> IntSet ;
+
+IntSortedSet [label="[IntSortedSet]|comparator()"];
+IntSet -> IntSortedSet ;
+
+AssocArraySet [label="AssocArraySet|"];
+IntSortedSet -> AssocArraySet ;
+
+IntMap [label="[IntMap]|clear()\ncontainsKey()\ncontainsValue()\nentrySet()\nfindKey()\nfindValue()\nget()\nisEmpty()\nkeySet()\nput()\nputAll()\nremove()\nsize()\nvalues()"];
+Object -> IntMap ;
+
+IntMapEntry [label="IntMapEntry|key\nvalue"];
+Object -> IntMapEntry ;
+
+IntSortedMap [label="[IntSortedMap]|comparator()"];
+IntMap -> IntSortedMap ;
+
+AssocArrayMap [label="AssocArrayMap|"];
+IntSortedMap -> AssocArrayMap ;
+
+}
+

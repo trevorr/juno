@@ -1,0 +1,148 @@
+/*
+VeraParser.jj - JavaCC parser definition for the Vera language
+Copyright (C) 2003 Trevor A. Robinson
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+*/
+
+// #include
+
+#include "testpp2.vr"
+
+// #include using object macro
+
+#define TESTPP2 "testpp2.vr"
+#include TESTPP2
+
+// #include using function macro
+
+#define TESTPP2_EXT(ext) "testpp2.ext"
+#include TESTPP2_EXT(vr)
+
+// #ifdef / #else / #endif
+
+#define TRUE
+// 0/0
+show1
+#ifdef TRUE // 1/0
+show2
+  #ifdef TRUE // 2/0
+show3
+    #ifdef FALSE // 3/1
+#include "testpp2.vr"
+hide0
+      #ifdef TRUE // 4/2
+hide1
+      #else // 4/2
+hide2
+      #endif // 3/1
+hide3
+    #else // 3/0
+show4
+    #endif // 2/0
+show5
+  #else // 2/1
+hide4
+  #endif // 1/0
+show6
+#endif // 0/0
+show7
+
+#define mo 0
+#define mo1 1
+#define mo2 2
+#define mo1mo2 3
+
+// argument references separated by comment achieves token pasting
+
+#define mf(a,b) a/**/b b
+mf(mo1,mo2) // -> 3 2 (gcc -> 1 2 2)
+#undef mf
+
+#define mf(a,b) a/*foo*/b b
+mf(mo1,mo2) // -> 3 2 (gcc -> 1 2 2)
+#undef mf
+
+#define mf(a,b) a/*
+*/b b
+mf(mo1,mo2) // -> 3 2 (gcc -> 1 2 2)
+#undef mf
+
+// no token pasting if whitespace around comment
+
+#define mf(a,b) a /**/ b b
+mf(mo1,mo2) // -> 1  2 2 (gcc -> 1 2 2)
+#undef mf
+
+#define mf(a,b) a/**/ b b
+mf(mo1,mo2) // -> 1 2 2 (gcc -> 1 2 2)
+#undef mf
+
+#define mf(a,b) a /**/b b
+mf(mo1,mo2) // -> 1 2 2 (gcc -> 1 2 2)
+#undef mf
+
+// no argument prescan; can construct function macro expansion in macro
+
+#define mf(a,b) a/**/b b
+#define mf2(a,b) a b
+mf2(mf,(mo1,mo2)) // -> 3 2 (gcc -> 1 2 2)
+#undef mf
+#undef mf2
+
+// recursive expansion supported by expanding function before arguments
+
+#define mf(x) x x
+mf(mf(1)) // -> 1 1 1 1 (gcc -> 1 1 1 1)
+#undef mf
+
+#define mf(x) "x x"
+mf(mf(1)) // -> "mf(1) mf(1)" (gcc -> "x x")
+#undef mf
+
+// token pasting works in object macros as well
+
+#define mo1mo1 mo/**/1
+mo1mo1 // -> 1 (gcc -> 0 1)
+
+// function macro expansion has precedence over tokenization
+
+#define mo1mf() ugh
+#define mf() mo1
+mf()mf() // -> ugh (gcc -> 1 1)
+#undef mf
+#undef mo1mf
+
+// stringification; no argument prescan/recursive expansion
+
+#define mf(a) "a"
+mf(mo1) // -> "mo1"
+#undef mf
+
+// stringification and token pasting
+
+#define mf(a,b) "a/**/b"
+mf(mo1,mo2) // -> "mo1/**/mo2"
+#undef mf
+
+#define mf(a,b) "a"/**/"b"
+mf(mo1,mo2) // -> "mo1""mo2"
+#undef mf
+
+// stringification occurs only for macro arguments
+
+#define mf(a) "a/**/mo2"
+mf(mo1) // -> "mo1/**/mo2"
+#undef mf

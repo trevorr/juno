@@ -1,0 +1,3302 @@
+/*
+ * JavaCC (TM) parser definition for the OpenVera (TM) language
+ * Copyright (C) 2003 Trevor A. Robinson
+ * JavaCC is a trademark or registered trademark of Sun Microsystems, Inc. in
+ * the U.S. or other countries.
+ * VERA and OpenVera are trademarks or registered trademarks of Synopsys, Inc.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+options {
+    STATIC = false;
+    USER_TOKEN_MANAGER = true;
+    TOKEN_CONSUMED_HOOK = true;
+}
+
+PARSER_BEGIN(VeraParser)
+
+package com.newisys.parser.vera;
+
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ListIterator;
+
+import com.newisys.langschema.*;
+import com.newisys.langschema.vera.*;
+import com.newisys.langsource.vera.*;
+import com.newisys.parser.util.*;
+import com.newisys.verilog.EdgeSet;
+
+/**
+ * JavaCC parser for the OpenVera (TM) language.
+ *
+ * Unimplemented features: foreach, do-while, smart queues, randseq, aspect
+ * oriented extensions, functional coverage, bind_var (obsolete), with port
+ * construct (obsolete)
+ * 
+ * @author Trevor Robinson
+ */
+public class VeraParser
+{
+    private VeraSourceObject curDecl;
+    private boolean firstToken;
+    private final LinkedList declStack = new LinkedList();
+    private final LinkedList tokenStack = new LinkedList();
+
+    private void beginCapture(VeraSourceObject obj)
+    {
+        declStack.addLast(curDecl);
+        curDecl = obj;
+        firstToken = true;
+    }
+
+    private void endCapture(VeraSourceObject obj)
+    {
+        assert (obj == curDecl);
+        curDecl = (VeraSourceObject) declStack.removeLast();
+    }
+
+    private void beginLocation(VeraSourceObject obj)
+    {
+        obj.setBeginLocation(getToken(1));
+    }
+
+    private void endLocation(VeraSourceObject obj)
+    {
+        obj.setEndLocation(getToken(0));
+    }
+
+    private void beginDecl(VeraSourceObject obj)
+    {
+        beginCapture(obj);
+        if (obj != null) beginLocation(obj);
+    }
+
+    private void endDecl(VeraSourceObject obj)
+    {
+        endCapture(obj);
+        if (obj != null) endLocation(obj);
+    }
+
+    private void beginMacro()
+    {
+        Token preToken = getToken(0);
+        if (preToken.kind == 0) preToken = null;
+        Token beginToken = getToken(1);
+        tokenStack.addLast(preToken);
+        tokenStack.addLast(beginToken);
+    }
+
+    private void endMacro(MacroDecl decl, boolean apply, boolean pop)
+    {
+        VeraToken beginToken, preToken;
+        if (pop) {
+            beginToken = (VeraToken) tokenStack.removeLast();
+            preToken = (VeraToken) tokenStack.removeLast();
+        } else {
+            ListIterator iter = tokenStack.listIterator(tokenStack.size());
+            beginToken = (VeraToken) iter.previous();
+            preToken = (VeraToken) iter.previous();
+        }
+        if (apply) {
+            VeraToken endToken = (VeraToken) getToken(0);
+            VeraToken postToken = (VeraToken) getToken(1);
+            MacroRef lastRef = MacroRefUtil.getCommonMacroRef(
+                beginToken.expandedFrom, endToken.expandedFrom);
+            if (lastRef != null && testMacroBoundaries(lastRef, preToken, postToken))
+            {
+                MacroRef firstRef = lastRef;
+                while (true) {
+                    MacroRef nextRef = firstRef.getExpandedFrom();
+                    if (nextRef == null || !testMacroBoundaries(
+                        nextRef, preToken, postToken)) break;
+                    firstRef = nextRef;
+                }
+                decl.setExpandedFrom(firstRef, lastRef);
+            }
+        }
+    }
+
+    private static boolean testMacroBoundaries(MacroRef macroRef,
+        VeraToken preToken, VeraToken postToken)
+    {
+        return (preToken == null ||
+            !MacroRefUtil.expansionContains(preToken.expandedFrom, macroRef)) &&
+            !MacroRefUtil.expansionContains(postToken.expandedFrom, macroRef);
+    }
+
+    private void endMacro(MacroDecl decl, boolean apply)
+    {
+        endMacro(decl, apply, true);
+    }
+
+    private void endMacroSuffix(MacroDecl decl)
+    {
+        endMacro(decl, true, false);
+    }
+
+    private void jj_token_consumed(Token t)
+    {
+        if (false) {
+            System.out.print(t.image);
+            MacroRef macroRef = ((VeraToken) t).expandedFrom;
+            while (macroRef != null) {
+                System.out.print(" <- " + macroRef);
+                macroRef = macroRef.getExpandedFrom();
+            }
+            System.out.println();
+        }
+
+        if (curDecl != null)
+        {
+            curDecl.applyCommentsFrom(t, firstToken);
+            firstToken = false;
+        }
+    }
+}
+
+PARSER_END(VeraParser)
+
+/* GRAMMAR */
+
+void compilation_unit(CompilationUnitDecl compUnit) :
+{
+    beginDecl(compUnit);
+}
+{
+    (
+        top_level_decl(compUnit)
+    )*
+    <EOF>
+    {
+        endDecl(compUnit);
+    }
+}
+
+MacroDecl macro_defn() :
+{
+    MacroDecl decl;
+}
+{
+    (
+        LOOKAHEAD( cond_expr() <EOF> )
+        decl = cond_expr()
+    |
+        LOOKAHEAD( cond_expr() <COLON> )
+        decl = range()
+    |
+        LOOKAHEAD( statement_lookahead() )
+        decl = statement()
+    |
+        decl = primitive_type()
+    )
+    <EOF>
+    {
+        return decl;
+    }
+}
+
+void top_level_decl(CompilationUnitDecl compUnit) :
+{
+    Token ft = getToken(0);
+    CompilationUnitDeclMember member = null;
+}
+{
+    (
+        member = program_decl()
+    |
+        LOOKAHEAD( extern_var_decl_lookahead() )
+        extern_var_decl(compUnit.getMembers())
+    |
+        member = typedef_decl()
+    |
+        LOOKAHEAD( class_decl_lookahead() )
+        member = class_decl()
+    |
+        LOOKAHEAD( ctor_decl_lookahead() )
+        member = ctor_decl()
+    |
+        LOOKAHEAD( func_decl_lookahead() )
+        member = func_decl()
+    |
+        member = ext_constraint_decl()
+    |
+        LOOKAHEAD( udf_func_decl_lookahead() )
+        member = udf_func_decl()
+    |
+        LOOKAHEAD( directc_func_decl_lookahead() )
+        member = directc_func_decl()
+    |
+        LOOKAHEAD( hdl_task_decl_lookahead() )
+        member = hdl_task_decl()
+    |
+        member = enum_decl()
+    |
+        member = intf_decl()
+    |
+        member = port_decl()
+    |
+        member = bind_decl()
+    )
+    {
+        // scan member tokens for associated preprocessor directives
+        Token lt = getToken(0);
+        Token t = ft;
+        while (t != lt)
+        {
+            if (t instanceof VeraToken)
+            {
+                VeraToken vt = (VeraToken) t;
+                if (vt.preprocDecls != null)
+                {
+                    Iterator iter = vt.preprocDecls.iterator();
+                    while (iter.hasNext())
+                    {
+                        CompilationUnitDeclMember obj = (CompilationUnitDeclMember) iter.next();
+                        compUnit.addMember(obj);
+                    }
+                }
+            }
+            t = t.next;
+        }
+
+        if (member != null) compUnit.addMember(member);
+    }
+}
+
+ProgramDecl program_decl() :
+{
+    String id;
+    ProgramDecl program = new ProgramDecl();
+    beginDecl(program);
+}
+{
+    <PROGRAM> id = identifier() { program.setIdentifier(id); }
+    (
+        <LBRACE> program_block_body(program) <RBRACE>
+    |
+        <BEGIN> program_block_body(program) <END>
+    )
+    {
+        endDecl(program);
+        return program;
+    }
+}
+
+// see also: block_body()
+void program_block_body(ProgramDecl program) :
+{
+    List globalVars = program.getGlobalVars();
+    StatementDecl stmt;
+}
+{
+    ( LOOKAHEAD( global_var_decl_lookahead() ) global_var_decl(globalVars) )*
+    ( stmt = statement() { program.addStatement(stmt); } )*
+}
+
+void global_var_decl_lookahead() :
+{}
+{
+    type() <IDENT>
+}
+
+// class_var_decl without var_decl_array_size
+void global_var_decl(List globalVars) :
+{
+    TypeRef typeRef;
+    GlobalVarDecl var = new GlobalVarDecl();
+    beginDecl(var);
+}
+{
+    typeRef = type()
+    {
+        var.setTypeRef(typeRef);
+    }
+    var_decl_id(var)
+    var_decl_init(var)
+    {
+        endDecl(var);
+        globalVars.add(var);
+    }
+    (
+        <COMMA>
+        {
+            var = new GlobalVarDecl();
+            beginDecl(var);
+            var.setTypeRef(typeRef);
+        }
+        var_decl_id(var)
+        var_decl_init(var)
+        {
+            endDecl(var);
+            globalVars.add(var);
+        }
+    )*
+    { beginCapture(var); } <SEMICOLON> { endCapture(var); }
+}
+
+void extern_var_decl_lookahead() :
+{}
+{
+    <EXTERN> type()
+}
+
+// global_var_decl without var_decl_init
+void extern_var_decl(List compUnitMembers) :
+{
+    TypeRef typeRef;
+    ExternVarDecl var = new ExternVarDecl();
+    beginDecl(var);
+}
+{
+    <EXTERN> typeRef = type()
+    {
+        var.setTypeRef(typeRef);
+    }
+    var_decl_id(var)
+    {
+        endDecl(var);
+        compUnitMembers.add(var);
+    }
+    (
+        { beginCapture(var); } <COMMA> { endCapture(var); }
+        {
+            var = new ExternVarDecl();
+            beginDecl(var);
+            var.setTypeRef(typeRef);
+        }
+        var_decl_id(var)
+        {
+            endDecl(var);
+            compUnitMembers.add(var);
+        }
+    )*
+    { beginCapture(var); } <SEMICOLON> { endCapture(var); }
+}
+
+TypedefDecl typedef_decl() :
+{
+    String id;
+    TypedefDecl typedef = new TypedefDecl();
+    beginDecl(typedef);
+}
+{
+    <TYPEDEF> <CLASS> id = identifier() { typedef.setIdentifier(id); } <SEMICOLON>
+    {
+        endDecl(typedef);
+        return typedef;
+    }
+}
+
+void class_decl_lookahead() :
+{}
+{
+    [ <EXTERN> ] ( <LOCAL> | <VIRTUAL> )* <CLASS>
+}
+
+ClassDecl class_decl() :
+{
+    String id;
+    ClassDecl cls = new ClassDecl();
+    beginDecl(cls);
+}
+{
+    [ <EXTERN> { cls.setExtern(true); } ]
+    (
+        <LOCAL> { cls.setLocal(true); }
+    |
+        <VIRTUAL> { cls.setVirtual(true); }
+    )*
+    <CLASS> id = identifier() { cls.setIdentifier(id); }
+    [
+        { String baseID; }
+        <EXTENDS> baseID = identifier() { cls.setBaseClassIdentifer(baseID); }
+        [ call_args(cls.getBaseCtorArgs()) ]
+    ]
+    (
+        <LBRACE> class_body(cls) <RBRACE>
+    |
+        <BEGIN> class_body(cls) <END>
+    )
+    {
+        endDecl(cls);
+        return cls;
+    }
+}
+
+void class_body(ClassDecl cls) :
+{
+    EnumDecl enumeration;
+    ClassConstraintDecl cons;
+    ClassFuncDecl func;
+}
+{
+    // since enumerations can appear anywhere in the class,
+    // it's best just to use semantic checking to enforce
+    // variable-constraint-function declaration order
+    (
+        enumeration = enum_decl()
+        { cls.addClassEnum(enumeration); }
+    |
+        LOOKAHEAD( member_var_decl_lookahead() )
+        member_var_decl(cls, null)
+    |
+        cons = constraint_decl()
+        { cls.addClassConstraint(cons); }
+    |
+        func = member_func_decl()
+        { cls.addClassFunc(func); }
+    )*
+}
+
+void member_var_decl_lookahead() :
+{}
+{
+    member_var_attrs(null)
+    (
+        <LBRACE>
+    |
+        <BEGIN>
+    |
+        type() <IDENT>
+    )
+}
+
+void member_var_decl(ClassDecl cls, ClassVarDecl var) :
+{
+    if (var == null) {
+        var = new ClassVarDecl();
+    } else {
+        var = (ClassVarDecl) var.clone();
+    }
+    beginDecl(var);
+}
+{
+    member_var_attrs(var)
+    (
+        <LBRACE> ( member_var_decl(cls, var) )+ <RBRACE>
+    |
+        <BEGIN> ( member_var_decl(cls, var) )+ <END>
+    |
+        class_var_decl(var, cls.getClassVars())
+    )
+    {
+        endDecl(var);
+    }
+}
+
+void member_var_attrs(ClassVarDecl var) :
+{}
+{
+    (
+        <LOCAL> { var.setVisibility(VeraVisibility.LOCAL); }
+    |
+        <PROTECTED> { var.setVisibility(VeraVisibility.PROTECTED); }
+    |
+        <PUBLIC> { var.setVisibility(VeraVisibility.PUBLIC); }
+    |
+        <STATIC> { var.setStaticVar(true); }
+    |
+        <RAND> { var.setRandMode(RandMode.RAND); }
+    |
+        <RANDC> { var.setRandMode(RandMode.RANDC); }
+    |
+        <NON_RAND> { var.setRandMode(RandMode.NON_RAND); }
+    |
+        <PACKED> { var.setPacked(true); }
+    |
+        <UNPACKED> { var.setPacked(false); }
+    |
+        <LITTLE_ENDIAN> { var.setBigEndian(false); }
+    |
+        <BIG_ENDIAN> { var.setBigEndian(true); }
+    |
+        <BIT_NORMAL> { var.setBitReverse(false); }
+    |
+        <BIT_REVERSE> { var.setBitReverse(true); }
+    )*
+}
+
+void class_var_decl(ClassVarDecl protoVar, List vars) :
+{
+    TypeRef typeRef;
+    ClassVarDecl var = (ClassVarDecl) protoVar.clone();
+    beginDecl(var);
+}
+{
+    typeRef = type()
+    {
+        var.setTypeRef(typeRef);
+    }
+    var_decl_id(var)
+    var_decl_array_size(var)
+    var_decl_init(var)
+    {
+        endDecl(var);
+        vars.add(var);
+    }
+    (
+        { beginCapture(var); } <COMMA> { endCapture(var); }
+        {
+            var = (ClassVarDecl) protoVar.clone();
+            beginDecl(var);
+            var.setTypeRef(typeRef);
+        }
+        var_decl_id(var)
+        var_decl_array_size(var)
+        var_decl_init(var)
+        {
+            endDecl(var);
+            vars.add(var);
+        }
+    )*
+    { beginCapture(var); } <SEMICOLON> { endCapture(var); }
+}
+
+void var_decl_array_size(ClassVarDecl var) :
+{
+    ExpressionDecl expr;
+}
+{
+    [
+        // semantic check: size keyword must match array type
+        ( <ASSOC_SIZE> | <DYNAMIC_SIZE> )
+        expr = cond_expr()
+        {
+            var.setRandomSizeExpr(expr);
+        }
+    ]
+}
+
+ClassConstraintDecl constraint_decl() :
+{
+    String id;
+    ClassConstraintDecl cons = new ClassConstraintDecl();
+    beginDecl(cons);
+}
+{
+    <CONSTRAINT> id = identifier() { cons.setIdentifier(id); }
+    (
+        constraint_block(cons)
+    |
+        <SEMICOLON> { cons.setExtern(true); }
+    )
+    {
+        endDecl(cons);
+        return cons;
+    }
+}
+
+ExtConstraintDecl ext_constraint_decl() :
+{
+    String classID, id;
+    ExtConstraintDecl cons = new ExtConstraintDecl();
+    beginDecl(cons);
+}
+{
+    <CONSTRAINT> classID = identifier() { cons.setClassIdentifier(classID); }
+    <SCOPE> id = identifier() { cons.setIdentifier(id); }
+    constraint_block(cons)
+    {
+        endDecl(cons);
+        return cons;
+    }
+}
+
+void constraint_block(ConstraintDecl cons) :
+{
+    ExpressionDecl consExpr;
+}
+{
+    (
+        <LBRACE> (
+            consExpr = constraint_expr()
+            { cons.addConstraintExpr(consExpr); }
+        )* <RBRACE>
+    |
+        <BEGIN> (
+            consExpr = constraint_expr()
+            { cons.addConstraintExpr(consExpr); }
+        )* <END>
+    )
+}
+
+void constraint_block_lookahead() :
+{}
+{
+    ( <LBRACE> | <BEGIN> ) constraint_expr()
+}
+
+ExpressionDecl constraint_expr() :
+{
+    ExpressionDecl result, predExpr, thenExpr, elseExpr = null;
+    DummyDecl dummy = new DummyDecl();
+    beginDecl(dummy);
+}
+{
+    (
+        // nested constraint block
+        LOOKAHEAD( constraint_block_lookahead() )
+        {
+            ConstraintDecl cons = new ConstraintDecl();
+            result = cons;
+        }
+        constraint_block(cons)
+    |
+        // if-else constraint
+        <IF> <LPAREN> predExpr = cond_expr() <RPAREN>
+
+        thenExpr = constraint_expr()
+
+        [
+            LOOKAHEAD(1) <ELSE>
+            elseExpr = constraint_expr()
+        ]
+
+        {
+            result = new IfElseConstraintDecl(predExpr, thenExpr, elseExpr);
+        }
+    |
+        // simple constraint or implication predicate
+        predExpr = cond_expr()
+        (
+            // implication constraint
+            <IMPLICATION>
+            thenExpr = constraint_expr()
+            {
+                result = new ImplicationConstraintDecl(predExpr, thenExpr);
+            }
+        |
+            // simple constraint
+            <SEMICOLON>
+            {
+                result = predExpr;
+            }
+        )
+    )
+    {
+        endDecl(dummy);
+        result.copyMetadata(dummy);
+        return result;
+    }
+}
+
+ClassFuncDecl member_func_decl() :
+{
+    BlockDecl blk;
+    ClassFuncDecl func = new ClassFuncDecl();
+    beginDecl(func);
+}
+{
+    {
+        func.setBeginLocation(getToken(1));
+    }
+    (
+        <LOCAL> { func.setVisibility(VeraVisibility.LOCAL); }
+    |
+        <PROTECTED> { func.setVisibility(VeraVisibility.PROTECTED); }
+    |
+        <PUBLIC> { func.setVisibility(VeraVisibility.PUBLIC); }
+    |
+        <VIRTUAL> { func.setVirtual(true); }
+    )*
+    (
+        LOOKAHEAD( <TASK> <NEW> )
+        ctor_proto(func)
+        ( blk = ctor_block() { func.setBlock(blk); } | <SEMICOLON> )
+    |
+        func_proto(func)
+        ( blk = block() { func.setBlock(blk); } | <SEMICOLON> )
+    )
+    {
+        endDecl(func);
+        return func;
+    }
+}
+
+void ctor_decl_lookahead() :
+{}
+{
+    <TASK> <IDENT> <SCOPE> <NEW>
+}
+
+FuncDecl ctor_decl() :
+{
+    String classID;
+    Token t;
+    BlockDecl blk;
+    FuncDecl ctor = new FuncDecl();
+    beginDecl(ctor);
+}
+{
+    <TASK>
+    classID = identifier() { ctor.setClassIdentifier(classID); } <SCOPE>
+    t = <NEW> { ctor.setIdentifier(t.image); }
+    <LPAREN> [ formal_param_list(ctor.getParams(), 0) ] <RPAREN>
+    blk = ctor_block() { ctor.setBlock(blk); }
+    {
+        endDecl(ctor);
+        return ctor;
+    }
+}
+
+void ctor_proto(AbsFuncDecl ctor) :
+{
+    Token t;
+}
+{
+    <TASK>
+    t = <NEW> { ctor.setIdentifier(t.image); }
+    <LPAREN> [ formal_param_list(ctor.getParams(), 0) ] <RPAREN>
+}
+
+void func_decl_lookahead() :
+{}
+{
+    <EXPORT> | ( [ <EXTERN> | <LOCAL> ] ( <TASK> | <FUNCTION> type() ) <IDENT> )
+}
+
+FuncDecl func_decl() :
+{
+    TypeRef returnType;
+    String classID, id;
+    BlockDecl blk;
+    FuncDecl func = new FuncDecl();
+    beginDecl(func);
+}
+{
+    [ <EXPORT> { func.setExport(true); } ]
+    (
+        <EXTERN> { func.setExtern(true); }
+        func_proto(func) <SEMICOLON>
+    |
+        [ <LOCAL> { func.setLocal(true); } ]
+        ( <TASK> | <FUNCTION> returnType = type() { func.setReturnType(returnType); } )
+        [
+            LOOKAHEAD(2)
+            classID = identifier() <SCOPE> { func.setClassIdentifier(classID); }
+        ]
+        id = identifier() { func.setIdentifier(id); }
+        <LPAREN> [ formal_param_list(func.getParams(), 0) ] <RPAREN>
+        blk = block() { func.setBlock(blk); }
+    )
+    {
+        endDecl(func);
+        return func;
+    }
+}
+
+void func_proto(AbsFuncDecl func) :
+{
+    TypeRef returnType;
+    String id;
+}
+{
+    ( <TASK> | <FUNCTION> returnType = type() { func.setReturnType(returnType); } )
+    id = identifier() { func.setIdentifier(id); }
+    <LPAREN> [ formal_param_list(func.getParams(), 0) ] <RPAREN>
+}
+
+void udf_func_decl_lookahead() :
+{}
+{
+    ( <TASK> | <FUNCTION> type() ) <EXT_IDENT>
+}
+
+UDFFuncDecl udf_func_decl() :
+{
+    TypeRef returnType;
+    Token t;
+    UDFFuncDecl func = new UDFFuncDecl();
+    beginDecl(func);
+}
+{
+    ( <TASK> | <FUNCTION> returnType = type() { func.setReturnType(returnType); } )
+    t = <EXT_IDENT> { func.setIdentifier(t.image); }
+    <LPAREN>
+    [
+        <STAR> { func.setVarArgs(true); }
+    |
+        formal_param_list(func.getParams(), 0)
+    ]
+    <RPAREN> <SEMICOLON>
+    {
+        endDecl(func);
+        return func;
+    }
+}
+
+void directc_func_decl_lookahead() :
+{}
+{
+    <EXTERN> <STRING_LITERAL>
+}
+
+UDFFuncDecl directc_func_decl() :
+{
+    String lang;
+    TypeRef returnType;
+    String id;
+    UDFFuncDecl func = new UDFFuncDecl();
+    beginDecl(func);
+}
+{
+    <EXTERN> lang = string() { func.setLanguage(lang); }
+    ( <TASK> | <FUNCTION> returnType = type() { func.setReturnType(returnType); } )
+    id = identifier() { func.setIdentifier(id); }
+    <LPAREN> [ formal_param_list(func.getParams(), 0) ] <RPAREN> <SEMICOLON>
+    {
+        endDecl(func);
+        return func;
+    }
+}
+
+void hdl_task_decl_lookahead() :
+{}
+{
+    [ <EXTERN> ] <HDL_TASK>
+}
+
+HDLTaskDecl hdl_task_decl() :
+{
+    String instPath;
+    HDLTaskDecl task = new HDLTaskDecl();
+    beginDecl(task);
+}
+{
+    (
+        <EXTERN> { task.setExtern(true); }
+        hdl_task_proto(task)
+    |
+        hdl_task_proto(task) instPath = string()
+        { task.setInstPath(instPath); }
+    )
+    <SEMICOLON>
+    {
+        endDecl(task);
+        return task;
+    }
+}
+
+void hdl_task_proto(HDLTaskDecl task) :
+{
+    String id;
+}
+{
+    <HDL_TASK> id = identifier() { task.setIdentifier(id); }
+    <LPAREN> [ formal_param_list(task.getParams(), 0) ] <RPAREN>
+}
+
+EnumDecl enum_decl() :
+{
+    String id;
+    EnumElementDecl elem;
+    EnumDecl _enum = new EnumDecl();
+    beginDecl(_enum);
+}
+{
+    <ENUM> id = identifier() { _enum.setIdentifier(id); }
+    (
+        <ASSIGN> elem = enum_list(_enum)
+    |
+        <LBRACE> elem = enum_list(_enum) <RBRACE>
+    |
+        <BEGIN> elem = enum_list(_enum) <END>
+    )
+    { beginCapture(elem); } <SEMICOLON> { endCapture(elem); }
+    {
+        endDecl(_enum);
+        return _enum;
+    }
+}
+
+EnumElementDecl enum_list(EnumDecl _enum) :
+{
+    EnumElementDecl elem;
+}
+{
+    elem = enum_elem() { _enum.addElement(elem); }
+    (
+        { beginCapture(elem); } <COMMA> { endCapture(elem); }
+        elem = enum_elem() { _enum.addElement(elem); }
+    )*
+    { return elem; }
+}
+
+EnumElementDecl enum_elem() :
+{
+    String id;
+    ExpressionDecl value, firstSuffix, lastSuffix;
+    EnumElementDecl elem = new EnumElementDecl();
+    beginDecl(elem);
+}
+{
+    id = identifier() { elem.setIdentifier(id); }
+    [
+        <LBRACKET> firstSuffix = const_expr() { elem.setFirstSuffix(firstSuffix); }
+        [ <COLON> lastSuffix = const_expr() { elem.setLastSuffix(lastSuffix); } ]
+        <RBRACKET>
+    ]
+    [
+        <ASSIGN> value = const_expr() { elem.setValue(value); }
+    ]
+    {
+        endDecl(elem);
+        return elem;
+    }
+}
+
+InterfaceDecl intf_decl() :
+{
+    String id;
+    InterfaceDecl intf = new InterfaceDecl();
+    beginDecl(intf);
+}
+{
+    <INTERFACE> id = identifier() { intf.setIdentifier(id); }
+    (
+        <LBRACE> ( signal_decl(intf) )* <RBRACE>
+    |
+        <BEGIN> ( signal_decl(intf) )* <END>
+    )
+    {
+        endDecl(intf);
+        return intf;
+    }
+}
+
+void signal_decl(InterfaceDecl intf) :
+{
+    ExpressionDecl highBitExpr;
+    String id;
+    SignalDecl signal = new SignalDecl();
+    beginDecl(signal);
+}
+{
+    (
+        <INPUT> { signal.setDirection(VeraSignalDirection.INPUT); }
+    |
+        <OUTPUT> { signal.setDirection(VeraSignalDirection.OUTPUT); }
+    |
+        <INOUT> { signal.setDirection(VeraSignalDirection.INOUT); }
+    )
+    [ highBitExpr = vector() { signal.setHighBitExpr(highBitExpr); } ]
+    id = identifier() { signal.setIdentifier(id); }
+    signal_type(signal)
+    [
+        { ExpressionDecl depthExpr; }
+        <DEPTH> depthExpr = const_expr()
+        { signal.setDepthExpr(depthExpr); }
+    ]
+    [
+        { String vcaType; }
+        <VCA> vcaType = identifier()
+        {
+            VeraVCAKind vcaKind;
+            int qvpos;
+            if (vcaType.startsWith("s")) {
+                vcaKind = VeraVCAKind.SYNC;
+                qvpos = 1;
+            }
+            else if (vcaType.startsWith("g")) {
+                vcaKind = VeraVCAKind.GLITCH;
+                qvpos = 1;
+            }
+            else {
+                vcaKind = VeraVCAKind.ASYNC;
+                qvpos = 0;
+            }
+            signal.setVCAKind(vcaKind);
+
+            VeraVCAQValue vcaQValue;
+            String qvstr = vcaType.substring(qvpos);
+            if (qvstr.equals("r1")) vcaQValue = VeraVCAQValue.ONE;
+            else if (qvstr.equals("r0")) vcaQValue = VeraVCAQValue.ZERO;
+            else if (qvstr.equals("rz")) vcaQValue = VeraVCAQValue.Z;
+            else if (qvstr.equals("rx")) vcaQValue = VeraVCAQValue.X;
+            else if (qvstr.equals("nr")) vcaQValue = VeraVCAQValue.HOLD;
+            else throw new ParseException("Unknown VCA type: " + vcaType);
+            signal.setVCAQValue(vcaQValue);
+        }
+    ]
+    [
+        { String node; }
+        <HDL_NODE> node = string()
+        { signal.setHDLNode(node); }
+    ]
+    <SEMICOLON>
+    {
+        endDecl(signal);
+        intf.addSignal(signal);
+    }
+}
+
+void signal_type(SignalDecl signal) :
+{
+}
+{
+    (
+        <CLOCK> { signal.setKind(VeraSignalKind.CLOCK); }
+    |
+        // semantic check: contains exactly one posedge and/or
+        //     exactly one negedge sample type for input/inout signal
+        // semantic check: contains exactly one posedge and/or
+        //     exactly one negedge drive type for output/inout signal
+        // semantic check: contains at most one non-positive skew
+        //     for input/inout signal
+        // semantic check: contains at most one non-negative skew
+        //     for output/inout signal
+        // semantic check: no zero skews for inout signal
+        {
+            VeraSignalKind kind = VeraSignalKind.NORMAL;
+            EdgeSet sampleEdges = EdgeSet.NO_EDGE;
+            EdgeSet driveEdges = EdgeSet.NO_EDGE;
+        }
+        (
+            { String attr; }
+            attr = identifier()
+            {
+                VeraSignalKind attrKind;
+                EdgeSet attrSampleEdge = EdgeSet.NO_EDGE;
+                EdgeSet attrDriveEdge = EdgeSet.NO_EDGE;
+                if (attr.equals("NHOLD")) {
+                    attrKind = VeraSignalKind.NORMAL;
+                    attrDriveEdge = EdgeSet.NEGEDGE;
+                }
+                else if (attr.equals("PHOLD")) {
+                    attrKind = VeraSignalKind.NORMAL;
+                    attrDriveEdge = EdgeSet.POSEDGE;
+                }
+                else if (attr.equals("NR0")) {
+                    attrKind = VeraSignalKind.RETURN_TO_ZERO;
+                    attrDriveEdge = EdgeSet.NEGEDGE;
+                }
+                else if (attr.equals("NR1")) {
+                    attrKind = VeraSignalKind.RETURN_TO_ONE;
+                    attrDriveEdge = EdgeSet.NEGEDGE;
+                }
+                else if (attr.equals("NRX")) {
+                    attrKind = VeraSignalKind.RETURN_TO_X;
+                    attrDriveEdge = EdgeSet.NEGEDGE;
+                }
+                else if (attr.equals("NRZ")) {
+                    attrKind = VeraSignalKind.RETURN_TO_Z;
+                    attrDriveEdge = EdgeSet.NEGEDGE;
+                }
+                else if (attr.equals("PR0")) {
+                    attrKind = VeraSignalKind.RETURN_TO_ZERO;
+                    attrDriveEdge = EdgeSet.POSEDGE;
+                }
+                else if (attr.equals("PR1")) {
+                    attrKind = VeraSignalKind.RETURN_TO_ONE;
+                    attrDriveEdge = EdgeSet.POSEDGE;
+                }
+                else if (attr.equals("PRX")) {
+                    attrKind = VeraSignalKind.RETURN_TO_X;
+                    attrDriveEdge = EdgeSet.POSEDGE;
+                }
+                else if (attr.equals("PRZ")) {
+                    attrKind = VeraSignalKind.RETURN_TO_Z;
+                    attrDriveEdge = EdgeSet.POSEDGE;
+                }
+                else if (attr.equals("NSAMPLE")) {
+                    attrKind = VeraSignalKind.NORMAL;
+                    attrSampleEdge = EdgeSet.NEGEDGE;
+                }
+                else if (attr.equals("PSAMPLE")) {
+                    attrKind = VeraSignalKind.NORMAL;
+                    attrSampleEdge = EdgeSet.POSEDGE;
+                }
+                else {
+                    throw new ParseException("Unknown signal type: " + attr);
+                }
+                if (attrKind != kind && kind != VeraSignalKind.NORMAL) {
+                    throw new ParseException("Conflicting signal types: " +
+                        kind + ", " + attrKind);
+                }
+                kind = attrKind;
+                sampleEdges = sampleEdges.union(attrSampleEdge);
+                driveEdges = driveEdges.union(attrDriveEdge);
+            }
+        |
+            { SignalSkewDecl skew; }
+            skew = skew_decl()
+            { signal.addSkew(skew); }
+        )+
+        {
+            signal.setKind(kind);
+            signal.setSampleEdges(sampleEdges);
+            signal.setDriveEdges(driveEdges);
+        }
+    )
+}
+
+SignalSkewDecl skew_decl() :
+{
+    Token bt, et;
+    SignalSkewDecl skew;
+    VeraSurrXTransition transitionKind;
+    ExpressionDecl timeToXExpr;
+    ExpressionDecl timeToValueExpr;
+}
+{
+    (
+        // surround-by-X
+        LOOKAHEAD( <POUND> trans_type() <LPAREN> const_expr() <COMMA> )
+        bt = <POUND> transitionKind = trans_type()
+        <LPAREN> timeToXExpr = const_expr() <COMMA> timeToValueExpr = const_expr() et = <RPAREN>
+        {
+            skew = new SignalSkewDecl(transitionKind, timeToXExpr, timeToValueExpr);
+            skew.setBeginLocation(bt);
+            skew.setEndLocation(et);
+        }
+    |
+        // simple skew
+        bt = <POUND> timeToValueExpr = const_expr()
+        {
+            skew = new SignalSkewDecl(timeToValueExpr);
+            skew.setBeginLocation(bt);
+            skew.setEndLocation(timeToValueExpr);
+        }
+    )
+    { return skew; }
+}
+
+VeraSurrXTransition trans_type() :
+{
+    VeraSurrXTransition trans = VeraSurrXTransition.ANY;
+    String str;
+}
+{
+    // [ <R> | <F> | <D> | <Z> ]
+    [
+        str = identifier()
+        {
+            if (str.equals("R")) trans = VeraSurrXTransition.RISING;
+            else if (str.equals("F")) trans = VeraSurrXTransition.FALLING;
+            else if (str.equals("D")) trans = VeraSurrXTransition.FROM_Z;
+            else if (str.equals("Z")) trans = VeraSurrXTransition.TO_Z;
+            else throw new ParseException("Unknown Surround-by-X transition: " + str);
+        }
+    ]
+    { return trans; }
+}
+
+PortDecl port_decl() :
+{
+    String id, memberID;
+    PortDecl port = new PortDecl();
+    beginDecl(port);
+}
+{
+    <PORT> id = identifier() { port.setIdentifier(id); }
+    (
+        <LBRACE> ( memberID = identifier() <SEMICOLON> { port.addMember(memberID); } )* <RBRACE>
+    |
+        <BEGIN> ( memberID = identifier() <SEMICOLON> { port.addMember(memberID); } )* <END>
+    )
+    {
+        endDecl(port);
+        return port;
+    }
+}
+
+BindDecl bind_decl() :
+{
+    String portID, id;
+    BindDecl bind = new BindDecl();
+    beginDecl(bind);
+}
+{
+    <BIND> portID = identifier() id = identifier()
+    {
+        bind.setPortIdentifier(portID);
+        bind.setIdentifier(id);
+    }
+    (
+        <LBRACE> ( bind_signal_decl(bind) )* <RBRACE>
+    |
+        <BEGIN> ( bind_signal_decl(bind) )* <END>
+    )
+    {
+        endDecl(bind);
+        return bind;
+    }
+}
+
+void bind_signal_decl(BindDecl bind) :
+{
+    String id;
+    BindSignalDecl signal = new BindSignalDecl();
+    beginDecl(signal);
+}
+{
+    id = identifier() { signal.setPortMember(id); }
+    bind_signal_group(signal) <SEMICOLON>
+    {
+        endDecl(signal);
+        bind.addSignal(signal);
+    }
+}
+
+void bind_signal_group(BindSignalDecl signal) :
+{
+    SignalRangeDecl signalRange;
+}
+{
+    <VOID>
+|
+    <LBRACE>
+    signalRange = bind_signal() { signal.addSignalRange(signalRange); }
+    ( <COMMA> signalRange = bind_signal() { signal.addSignalRange(signalRange); } )*
+    <RBRACE>
+|
+    signalRange = bind_signal() { signal.addSignalRange(signalRange); }
+}
+
+SignalRangeDecl bind_signal() :
+{
+    String intfID, signalID;
+    RangeDecl range;
+    SignalRangeDecl signalRange = new SignalRangeDecl();
+    beginDecl(signalRange);
+}
+{
+    intfID = identifier() { signalRange.setInterfaceIdentifier(intfID); }
+    <DOT>
+    signalID = identifier() { signalRange.setSignalIdentifier(signalID); }
+    [ range = bitfield() { signalRange.setBitfield(range); } ]
+    {
+        endDecl(signalRange);
+        return signalRange;
+    }
+}
+
+ParamDecl formal_param_list(List params, int optLevel) :
+{
+    ParamDecl param;
+}
+{
+    param = formal_param_group(params, optLevel)
+    (
+        { beginCapture(param); } <COMMA> { endCapture(param); }
+        param = formal_param_group(params, optLevel)
+    )*
+    { return param; }
+}
+
+ParamDecl formal_param_group(List params, int optLevel) :
+{
+    ParamDecl param;
+}
+{
+    (
+        <LPAREN> param = formal_param_list(params, optLevel + 1) <RPAREN>
+    |
+        param = formal_param()
+        {
+            param.setOptLevel(optLevel);
+            params.add(param);
+        }
+    )
+    { return param; }
+}
+
+ParamDecl formal_param() :
+{
+    TypeRef typeRef;
+    ExpressionDecl defExpr;
+    ParamDecl param = new ParamDecl();
+    beginDecl(param);
+}
+{
+    [ <VAR> { param.setByRef(true); } ]
+    typeRef = type() { param.setTypeRef(typeRef); }
+    var_decl_id(param)
+    [ <ASSIGN> defExpr = cond_expr() { param.setDefaultExpr(defExpr); } ]
+    {
+        endDecl(param);
+        return param;
+    }
+}
+
+TypeRef type() :
+{
+    String id;
+    TypeRef typeRef;
+    beginMacro();
+}
+{
+    (
+        typeRef = primitive_type()
+    |
+        {
+            UserTypeRef userTypeRef = new UserTypeRef();
+            beginLocation(userTypeRef);
+        }
+        id = identifier()
+        {
+            userTypeRef.setIdentifier(id);
+            endLocation(userTypeRef);
+            typeRef = userTypeRef;
+        }
+    )
+    {
+        endMacro(typeRef, true);
+        return typeRef;
+    }
+}
+
+PrimitiveTypeRef primitive_type() :
+{
+    PrimitiveTypeRef typeRef;
+    DummyDecl dummy = new DummyDecl();
+    beginLocation(dummy);
+}
+{
+    (
+        (
+            ( <BIT> | <REG> ) { typeRef = new PrimitiveTypeRef(VeraPrimitiveKind.BIT); }
+            [
+                { ExpressionDecl highBitExpr; }
+                highBitExpr = vector()
+                { typeRef = new BitVectorTypeRef(highBitExpr); }
+            ]
+        )
+    |
+        <EVENT> { typeRef = new PrimitiveTypeRef(VeraPrimitiveKind.EVENT); }
+    |
+        <INTEGER> { typeRef = new PrimitiveTypeRef(VeraPrimitiveKind.INTEGER); }
+    |
+        <STRING> { typeRef = new PrimitiveTypeRef(VeraPrimitiveKind.STRING); }
+    )
+    {
+        endLocation(dummy);
+        typeRef.copyMetadata(dummy);
+        return typeRef;
+    }
+}
+
+ExpressionDecl vector() :
+{
+    ExpressionDecl highBitExpr;
+    Token t;
+}
+{
+    <LBRACKET>
+    highBitExpr = const_expr()
+    <COLON>
+    t = <INTEGER_LITERAL>
+    { if (!t.image.equals("0")) throw new ParseException("0 expected"); }
+    <RBRACKET>
+    { return highBitExpr; }
+}
+
+RangeDecl bitfield() :
+{
+    RangeDecl r = new RangeDecl();
+    beginDecl(r);
+}
+{
+    <LBRACKET>
+    { beginMacro(); }
+    internal_range(r)
+    { endMacro(r, true); }
+    <RBRACKET>
+    {
+        endDecl(r);
+        return r;
+    }
+}
+
+void var_decl_id(AbsVarDecl decl) :
+{
+    String id;
+    Token bt, et;
+}
+{
+    id = identifier() { decl.setIdentifier(id); }
+    [
+        bt = <LBRACKET>
+        {
+            TypeRef elemType = decl.getTypeRef();
+            ArrayTypeRef arrayType;
+        }
+        (
+            // bit-associative array
+            [ <BIT> | <REG> ] et = <RBRACKET>
+            { arrayType = new ArrayTypeRef(ArrayKind.BIT_ASSOCIATIVE, elemType); }
+        |
+            // string-associative array
+            <STRING> et = <RBRACKET>
+            { arrayType = new ArrayTypeRef(ArrayKind.STRING_ASSOCIATIVE, elemType); }
+        |
+            // dynamic array
+            <STAR> et = <RBRACKET> { arrayType = new ArrayTypeRef(ArrayKind.DYNAMIC, elemType); }
+        |
+            {
+                FixedArrayTypeRef fixedArrayType = new FixedArrayTypeRef(elemType);
+                ExpressionDecl expr;
+            }
+            // fixed or multi-dimensional array
+            expr = const_expr() et = <RBRACKET> { fixedArrayType.addDimension(expr); }
+            (
+                <LBRACKET> expr = const_expr() et = <RBRACKET> { fixedArrayType.addDimension(expr); }
+            )*
+            { arrayType = fixedArrayType; }
+        )
+        {
+            arrayType.setBeginLocation(bt);
+            arrayType.setEndLocation(et);
+            decl.setTypeRef(arrayType);
+        }
+    ]
+}
+
+void var_decl_init(VarDecl decl) :
+{
+    ExpressionDecl expr;
+}
+{
+    [
+        <ASSIGN>
+        (
+            expr = new_expr()
+        |
+            // use semantic lookahead to avoid conflict with concatenation
+            LOOKAHEAD( { decl.getTypeRef() instanceof ArrayTypeRef } )
+            expr = array_init()
+        |
+            expr = cond_expr()
+        )
+        {
+            decl.setInitExpr(expr);
+        }
+    ]
+}
+
+ExpressionDecl array_init() :
+{
+    ExpressionDecl elem;
+    ArrayInitDecl init = new ArrayInitDecl();
+    beginDecl(init);
+}
+{
+    <LBRACE>
+    elem = array_init_elem() { init.addElement(elem); }
+    (
+        { beginCapture(elem); } <COMMA> { endCapture(elem); }
+        elem = array_init_elem() { init.addElement(elem); }
+    )*
+    <RBRACE>
+    {
+        endDecl(init);
+        return init;
+    }
+}
+
+ExpressionDecl array_init_elem() :
+{
+    ExpressionDecl elem;
+}
+{
+    (
+        // force nested array initializer to win over concatenation
+        LOOKAHEAD( <LBRACE> )
+        elem = array_init()
+    |
+        elem = const_expr()
+    )
+    { return elem; }
+}
+
+BlockDecl block() :
+{
+    BlockDecl blk = new BlockDecl();
+    beginDecl(blk);
+}
+{
+    (
+        <LBRACE> block_body(blk) <RBRACE>
+    |
+        <BEGIN> block_body(blk) <END>
+    )
+    {
+        endDecl(blk);
+        return blk;
+    }
+}
+
+BlockDecl ctor_block() :
+{
+    BlockDecl blk = new BlockDecl();
+    beginDecl(blk);
+}
+{
+    (
+        <LBRACE> ctor_block_body(blk) <RBRACE>
+    |
+        <BEGIN> ctor_block_body(blk) <END>
+    )
+    {
+        endDecl(blk);
+        return blk;
+    }
+}
+
+void block_body(BlockDecl blk) :
+{
+    List localVars = blk.getLocalVars();
+    StatementDecl stmt;
+}
+{
+    ( LOOKAHEAD( local_var_decl_lookahead() ) local_var_decl(localVars) )*
+    ( stmt = statement() { blk.addStatement(stmt); } )*
+}
+
+void ctor_block_body(BlockDecl blk) :
+{
+    List localVars = blk.getLocalVars();
+    StatementDecl stmt;
+}
+{
+    ( LOOKAHEAD( local_var_decl_lookahead() ) local_var_decl(localVars) )*
+    [
+        LOOKAHEAD( explicit_ctor_call_lookahead() )
+        stmt = explicit_ctor_call() { blk.addStatement(stmt); }
+    ]
+    ( stmt = statement() { blk.addStatement(stmt); } )*
+}
+
+void local_var_decl_lookahead() :
+{}
+{
+    [ <STATIC> | <SHADOW> ]
+    type() <IDENT>
+}
+
+// class_var_decl without var_decl_array_size
+void local_var_decl(List localVars) :
+{
+    LocalVarModifier mod = null;;
+    TypeRef typeRef;
+    LocalVarDecl var = new LocalVarDecl();
+    beginDecl(var);
+}
+{
+    [
+        <STATIC> { mod = LocalVarModifier.STATIC; }
+    |
+        <SHADOW> { mod = LocalVarModifier.SHADOW; }
+    ]
+    typeRef = type()
+    {
+        var.setTypeRef(typeRef);
+        if (mod != null) var.addModifier(mod);
+    }
+    var_decl_id(var)
+    var_decl_init(var)
+    {
+        endDecl(var);
+        localVars.add(var);
+    }
+    (
+        { beginCapture(var); } <COMMA> { endCapture(var); }
+        {
+            var = new LocalVarDecl();
+            beginDecl(var);
+            var.setTypeRef(typeRef);
+            if (mod != null) var.addModifier(mod);
+        }
+        var_decl_id(var)
+        var_decl_init(var)
+        {
+            endDecl(var);
+            localVars.add(var);
+        }
+    )*
+    { beginCapture(var); } <SEMICOLON> { endCapture(var); }
+}
+
+void explicit_ctor_call_lookahead() :
+{}
+{
+    <SUPER> <DOT> <NEW>
+}
+
+StatementDecl explicit_ctor_call() :
+{
+    Token bt, et;
+    ExpressionStatementDecl stmt = new ExpressionStatementDecl();
+    beginDecl(stmt);
+}
+{
+    bt = <SUPER> <DOT> et = <NEW>
+    {
+        ExpressionDecl superExpr = new SuperRefDecl();
+        superExpr.setBeginLocation(bt);
+        superExpr.setEndLocation(bt);
+        ExpressionDecl ctorExpr = new MemberAccessDecl(superExpr, "new");
+        ctorExpr.setBeginLocation(bt);
+        ctorExpr.setEndLocation(et);
+        FuncCallDecl callExpr = new FuncCallDecl(ctorExpr);
+        callExpr.setBeginLocation(bt);
+        beginCapture(callExpr);
+    }
+    call_args(callExpr.getArguments())
+    {
+        endDecl(callExpr);
+    }
+    <SEMICOLON>
+    {
+        stmt.setExpr(callExpr);
+        endDecl(stmt);
+        return stmt;
+    }
+}
+
+void statement_lookahead() :
+{
+}
+{
+    <LBRACE> | <BEGIN> |
+    <FORK> |
+    <IF> |
+    <CASE> | <CASEX> | <CASEZ> |
+    <RANDCASE> |
+    <REPEAT> |
+    <FOR> |
+    <WHILE> |
+    <RETURN> |
+    <BREAK> |
+    <CONTINUE> |
+    <TERMINATE> |
+    <BREAKPOINT> |
+    /* sync, drive, or expect */
+    <AT>
+    /* call */
+    <VOID> <ASSIGN> |
+    /* expect */
+    <ATAT> |
+    <ATATAT> |
+    /* assign */
+    <APOS> <LBRACE> |
+    <INCR> | <DECR> |
+    /* call, drive, expect, or assign */
+    var_ref()
+    (
+        <LPAREN> | /* call */
+        <LE> | /* drive */
+        <EQ> | <NE> | /* expect */
+        <INCR> | <DECR> | <ASSIGN> | compound_assign_oper() /* assign */
+    )
+}
+
+StatementDecl statement() :
+{
+    StatementDecl stmt;
+    beginMacro();
+}
+{
+    (
+        LOOKAHEAD(1)
+        stmt = block()
+    |
+        stmt = fork_statement()
+    |
+        stmt = if_statement()
+    |
+        stmt = case_statement()
+    |
+        stmt = randcase_statement()
+    |
+        stmt = repeat_statement()
+    |
+        stmt = for_statement()
+    |
+        stmt = while_statement()
+    |
+        stmt = return_statement()
+    |
+        stmt = break_statement()
+    |
+        stmt = continue_statement()
+    |
+        stmt = terminate_statement()
+    |
+        stmt = breakpoint_statement()
+    |
+        LOOKAHEAD( call_lookahead() )
+        stmt = call_statement()
+    |
+        LOOKAHEAD( sync_statement() )
+        stmt = sync_statement()
+    |
+        LOOKAHEAD( drive_lookahead() )
+        stmt = drive_statement()
+    |
+        LOOKAHEAD( expect_lookahead() )
+        stmt = expect_statement()
+    |
+        stmt = assign_statement()
+    )
+    {
+        endMacro(stmt, true);
+        return stmt;
+    }
+}
+
+void call_lookahead() :
+{}
+{
+    <VOID> <ASSIGN> | var_ref() <LPAREN>
+}
+
+ExpressionStatementDecl call_statement() :
+{
+    ExpressionDecl expr;
+    ExpressionStatementDecl stmt = new ExpressionStatementDecl();
+    beginDecl(stmt);
+}
+{
+    (
+        <VOID> <ASSIGN> expr = cond_expr()
+    |
+        expr = var_ref()
+        {
+            if (expr instanceof VarRefDecl) {
+                ((VarRefDecl) expr).setFunctionCall(true);
+            }
+            FuncCallDecl callExpr = new FuncCallDecl(expr);
+            callExpr.setBeginLocation(expr);
+            beginCapture(callExpr);
+        }
+        call_args(callExpr.getArguments())
+        call_constraints(callExpr)
+        {
+            endDecl(callExpr);
+            expr = callExpr;
+        }
+    )
+    <SEMICOLON>
+    {
+        stmt.setExpr(expr);
+        endDecl(stmt);
+        return stmt;
+    }
+}
+
+ForkJoinDecl fork_statement() :
+{
+    StatementDecl stmt;
+    ForkJoinDecl forkDecl = new ForkJoinDecl();
+    beginDecl(forkDecl);
+}
+{
+    <FORK>
+    ( stmt = statement() { forkDecl.addStatement(stmt); } )+
+    <JOIN>
+    [
+        <ALL> { forkDecl.setJoinKind(JoinKind.ALL); }
+    |
+        <ANY> { forkDecl.setJoinKind(JoinKind.ANY); }
+    |
+        <NONE> { forkDecl.setJoinKind(JoinKind.NONE); }
+    ]
+    {
+        endDecl(forkDecl);
+        return forkDecl;
+    }
+}
+
+IfElseDecl if_statement() :
+{
+    ExpressionDecl expr;
+    StatementDecl stmt;
+    IfElseDecl ifElseDecl = new IfElseDecl();
+    beginDecl(ifElseDecl);
+}
+{
+    <IF> <LPAREN> expr = cond_expr() <RPAREN> { ifElseDecl.setIfExpr(expr); }
+    stmt = statement() { ifElseDecl.setThenStatement(stmt); }
+    [ LOOKAHEAD(1) <ELSE> stmt = statement() { ifElseDecl.setElseStatement(stmt); } ]
+    {
+        endDecl(ifElseDecl);
+        return ifElseDecl;
+    }
+}
+
+CaseDecl case_statement() :
+{
+    ExpressionDecl expr;
+    CaseDecl caseDecl = new CaseDecl();
+    beginDecl(caseDecl);
+}
+{
+    (
+        <CASE> { caseDecl.setCaseKind(VeraCaseKind.NORMAL); }
+    |
+        <CASEX> { caseDecl.setCaseKind(VeraCaseKind.X); }
+    |
+        <CASEZ> { caseDecl.setCaseKind(VeraCaseKind.Z); }
+    )
+    <LPAREN> expr = cond_expr() <RPAREN> { caseDecl.setCaseExpr(expr); }
+    (
+        <LBRACE> case_body(caseDecl) <RBRACE>
+    |
+        <BEGIN> case_body(caseDecl) <END>
+    )
+    {
+        endDecl(caseDecl);
+        return caseDecl;
+    }
+}
+
+void case_body(CaseDecl caseDecl) :
+{
+    StatementDecl stmt;
+}
+{
+    (
+        (
+            <_DEFAULT> <COLON> stmt = statement()
+            { caseDecl.setDefaultStatement(stmt); }
+        |
+            {
+                CaseMemberDecl member = new CaseMemberDecl();
+                beginDecl(member);
+            }
+            cond_expr_list(member.getExprs()) <COLON> stmt = statement()
+            {
+                member.setStatement(stmt);
+                endDecl(member);
+                caseDecl.addCaseMember(member);
+            }
+        )
+    )+
+}
+
+RandCaseDecl randcase_statement() :
+{
+    RandCaseDecl randCaseDecl = new RandCaseDecl();
+    beginDecl(randCaseDecl);
+}
+{
+    <RANDCASE>
+    (
+        <LBRACE> randcase_body(randCaseDecl) <RBRACE>
+    |
+        <BEGIN> randcase_body(randCaseDecl) <END>
+    )
+    {
+        endDecl(randCaseDecl);
+        return randCaseDecl;
+    }
+}
+
+void randcase_body(RandCaseDecl randCaseDecl) :
+{
+    ExpressionDecl expr;
+    StatementDecl stmt;
+}
+{
+    (
+        {
+            RandCaseMemberDecl member = new RandCaseMemberDecl();
+            beginDecl(member);
+        }
+        expr = cond_expr() <COLON> stmt = statement()
+        {
+            member.setWeightExpr(expr);
+            member.setStatementDecl(stmt);
+            endDecl(member);
+            randCaseDecl.addCaseMember(member);
+        }
+    )+
+}
+
+RepeatDecl repeat_statement() :
+{
+    ExpressionDecl expr;
+    StatementDecl stmt;
+    RepeatDecl repeat = new RepeatDecl();
+    beginDecl(repeat);
+}
+{
+    <REPEAT> <LPAREN> expr = cond_expr() <RPAREN> stmt = statement()
+    {
+        repeat.setCondition(expr);
+        repeat.setStatement(stmt);
+        endDecl(repeat);
+        return repeat;
+    }
+}
+
+ForDecl for_statement() :
+{
+    ExpressionDecl expr;
+    StatementDecl stmt;
+    ForDecl forDecl = new ForDecl();
+    beginDecl(forDecl);
+}
+{
+    <FOR> <LPAREN>
+    [ assign_expr_list(forDecl.getInitExprs()) ] <SEMICOLON>
+    [ expr = cond_expr() { forDecl.setCondition(expr); } ] <SEMICOLON>
+    [ assign_expr_list(forDecl.getUpdateExprs()) ] <RPAREN>
+    stmt = statement()
+    {
+        forDecl.setStatement(stmt);
+        endDecl(forDecl);
+        return forDecl;
+    }
+}
+
+WhileDecl while_statement() :
+{
+    ExpressionDecl expr;
+    StatementDecl stmt;
+    WhileDecl whileStmt = new WhileDecl();
+    beginDecl(whileStmt);
+}
+{
+    <WHILE> <LPAREN> expr = cond_expr() <RPAREN> stmt = statement()
+    {
+        whileStmt.setCondition(expr);
+        whileStmt.setStatement(stmt);
+        endDecl(whileStmt);
+        return whileStmt;
+    }
+}
+
+ReturnDecl return_statement() :
+{
+    ReturnDecl returnStmt = new ReturnDecl();
+    beginDecl(returnStmt);
+}
+{
+    <RETURN> <SEMICOLON>
+    {
+        endDecl(returnStmt);
+        return returnStmt;
+    }
+}
+
+BreakDecl break_statement() :
+{
+    BreakDecl breakStmt = new BreakDecl();
+    beginDecl(breakStmt);
+}
+{
+    <BREAK> <SEMICOLON>
+    {
+        endDecl(breakStmt);
+        return breakStmt;
+    }
+}
+
+ContinueDecl continue_statement() :
+{
+    ContinueDecl continueStmt = new ContinueDecl();
+    beginDecl(continueStmt);
+}
+{
+    <CONTINUE> <SEMICOLON>
+    {
+        endDecl(continueStmt);
+        return continueStmt;
+    }
+}
+
+TerminateDecl terminate_statement() :
+{
+    TerminateDecl terminateStmt = new TerminateDecl();
+    beginDecl(terminateStmt);
+}
+{
+    <TERMINATE> <SEMICOLON>
+    {
+        endDecl(terminateStmt);
+        return terminateStmt;
+    }
+}
+
+BreakpointDecl breakpoint_statement() :
+{
+    BreakpointDecl breakpointStmt = new BreakpointDecl();
+    beginDecl(breakpointStmt);
+}
+{
+    <BREAKPOINT> <SEMICOLON>
+    {
+        endDecl(breakpointStmt);
+        return breakpointStmt;
+    }
+}
+
+SyncDecl sync_statement() :
+{
+    SyncTerm syncTerm;
+    SyncDecl syncDecl = new SyncDecl();
+    beginDecl(syncDecl);
+}
+{
+    <AT> <LPAREN>
+    syncTerm = sync_term() { syncDecl.addTerm(syncTerm); }
+    (
+        <OR> syncTerm = sync_term() { syncDecl.addTerm(syncTerm); }
+    )*
+    <RPAREN> <SEMICOLON>
+    {
+        endDecl(syncDecl);
+        return syncDecl;
+    }
+}
+
+SyncTerm sync_term() :
+{
+    ExpressionDecl signal;
+    SyncTerm syncTerm = new SyncTerm();
+    beginDecl(syncTerm);
+}
+{
+    [
+        <POSEDGE> { syncTerm.setEdge(SyncEdge.POSEDGE); }
+    |
+        <NEGEDGE> { syncTerm.setEdge(SyncEdge.NEGEDGE); }
+    ]
+    (
+        <CLOCK>
+    |
+        signal = var_ref() { syncTerm.setSignal(signal); }
+        [ <ASYNC> { syncTerm.setAsync(true); } ]
+    )
+    {
+        endDecl(syncTerm);
+        return syncTerm;
+    }
+}
+
+void drive_lookahead() :
+{}
+{
+    (
+        <AT> cond_expr() var_ref() ( <LE> | <ASSIGN> )
+    |
+        var_ref() ( <LE> | <ASSIGN> cond_expr() ( <SOFT> | <ASYNC> ) )
+    )
+}
+
+DriveSampleDecl drive_statement() :
+{
+    ExpressionDecl delay, signal, value;
+    DriveSampleDecl driveDecl = new DriveSampleDecl();
+    beginDecl(driveDecl);
+}
+{
+    [ <AT> delay = cond_expr() { driveDecl.setDelayExpr(delay); } ]
+    signal = var_ref()  { driveDecl.setDestExpr(signal); }
+    (
+        <ASSIGN> { driveDecl.setOperator(Operator.ASSIGN); }
+    |
+        <LE> { driveDecl.setOperator(Operator.NONBLOCKING_ASSIGN); }
+    )
+    value = cond_expr() { driveDecl.setValueExpr(value); }
+    (
+        <SOFT> { driveDecl.setSoft(true); }
+    |
+        <ASYNC> { driveDecl.setAsync(true); }
+    )*
+    <SEMICOLON>
+    {
+        endDecl(driveDecl);
+        return driveDecl;
+    }
+}
+
+void expect_lookahead() :
+{}
+{
+    <AT>
+    (
+        <COMMA>
+    |
+        cond_expr()
+        (
+            <COMMA>
+        |
+            var_ref() ( <EQ> | <NE> )
+        )
+    )
+|
+    <ATAT>
+|
+    <ATATAT>
+|
+    var_ref() ( <EQ> | <NE> )
+}
+
+ExpectDecl expect_statement() :
+{
+    VeraExpectKind kind = VeraExpectKind.SIMPLE;
+    ExpressionDecl delay = null, window = null;
+    ExpectDecl expectDecl = new ExpectDecl();
+    beginDecl(expectDecl);
+}
+{
+    [
+        (
+            <AT> { kind = VeraExpectKind.SIMPLE; }
+        |
+            <ATAT> { kind = VeraExpectKind.FULL; }
+        |
+            <ATATAT> { kind = VeraExpectKind.RESTRICTED; }
+        )
+        (
+            <COMMA> window = cond_expr()
+        |
+            { ExpressionDecl expr; }
+            expr = cond_expr()
+            (
+                <COMMA> window = cond_expr()
+                { delay = expr; }
+            |
+                {
+                    if (kind == VeraExpectKind.SIMPLE) {
+                        delay = expr;
+                    } else {
+                        window = expr;
+                    }
+                }
+            )
+        )
+        {
+            expectDecl.setDelayExpr(delay);
+            expectDecl.setWindowExpr(window);
+        }
+    ]
+    {
+        expectDecl.setExpectKind(kind);
+    }
+    expect_expr_list(expectDecl)
+    (
+        <SOFT> { expectDecl.setSoft(true); }
+    |
+        <ASYNC> { expectDecl.setAsync(true); }
+    )*
+    <SEMICOLON>
+    {
+        endDecl(expectDecl);
+        return expectDecl;
+    }
+}
+
+void expect_expr_list(ExpectDecl expectDecl) :
+{
+    ExpectExprDecl expr;
+}
+{
+    expr = expect_expr()
+    {
+        expectDecl.addExpectExpr(expr);
+        expectDecl.setBeginLocation(expr);
+    }
+    (
+        // semantic check: cannot mix ',' and 'or'
+        { beginCapture(expr); }
+        ( <COMMA> | <OR> { expectDecl.setExpectAll(false); } )
+        { endCapture(expr); }
+        expr = expect_expr() { expectDecl.addExpectExpr(expr); }
+    )*
+}
+
+ExpectExprDecl expect_expr() :
+{
+    ExpressionDecl signal, value;
+    ExpectExprDecl expectExpr = new ExpectExprDecl();
+    beginDecl(expectExpr);
+}
+{
+    signal = var_ref() { expectExpr.setSignalExpr(signal); }
+    (
+        <EQ> { expectExpr.setOperator(Operator.EQUAL); }
+    |
+        <NE> { expectExpr.setOperator(Operator.NOT_EQUAL); }
+    )
+    value = cond_expr()
+    {
+        expectExpr.setValueExpr(value);
+        endDecl(expectExpr);
+        return expectExpr;
+    }
+}
+
+void assign_lookahead() :
+{
+}
+{
+    <APOS> <LBRACE> |
+    <INCR> | <DECR> |
+    var_ref() ( <INCR> | <DECR> | <ASSIGN> | compound_assign_oper() )
+}
+
+ExpressionStatementDecl assign_statement() :
+{
+    ExpressionDecl expr;
+    ExpressionStatementDecl stmt = new ExpressionStatementDecl();
+    beginDecl(stmt);
+}
+{
+    expr = assign_expr() <SEMICOLON>
+    {
+        stmt.setExpr(expr);
+        endDecl(stmt);
+        return stmt;
+    }
+}
+
+ExpressionDecl assign_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    OperationDecl opExpr = new OperationDecl();
+    beginDecl(opExpr);
+}
+{
+    (
+        // LHS concatenation: '{ x, y } = z
+        LOOKAHEAD( <APOS> )
+        expr1 = lcat_expr() { opExpr.addOperand(expr1); }
+        <ASSIGN> { opExpr.setOperator(Operator.ASSIGN); }
+        expr2 = cond_expr() { opExpr.addOperand(expr2); }
+    |
+        // pre-increment/decrement: ++x, --x
+        (
+            <INCR> { opExpr.setOperator(Operator.PRE_INCREMENT); }
+        |
+            <DECR> { opExpr.setOperator(Operator.PRE_DECREMENT); }
+        )
+        expr1 = var_ref() { opExpr.addOperand(expr1); }
+    |
+        expr1 = var_ref() { opExpr.addOperand(expr1); }
+        (
+            // post-increment/decrement: x++, x--
+            (
+                <INCR> { opExpr.setOperator(Operator.POST_INCREMENT); }
+            |
+                <DECR> { opExpr.setOperator(Operator.POST_DECREMENT); }
+            )
+        |
+            // assignment: x = y, x = new
+            <ASSIGN> { opExpr.setOperator(Operator.ASSIGN); }
+            ( expr2 = new_expr() | expr2 = cond_expr() ) { opExpr.addOperand(expr2); }
+        |
+            // compound assignment: x += y, x -= y, ...
+            op = compound_assign_oper() { opExpr.setOperator(op); }
+            expr2 = cond_expr() { opExpr.addOperand(expr2); }
+        )
+    )
+    {
+        endDecl(opExpr);
+        return opExpr;
+    }
+}
+
+void assign_expr_list(List exprs) :
+{
+    ExpressionDecl expr;
+}
+{
+    expr = assign_expr() { exprs.add(expr); }
+    (
+        { beginCapture(expr); } <COMMA> { endCapture(expr); }
+        expr = assign_expr() { exprs.add(expr); }
+    )*
+}
+
+OperationDecl lcat_expr() :
+{
+    ExpressionDecl expr;
+    OperationDecl lcatExpr = new OperationDecl(Operator.CONCATENATION);
+    beginDecl(lcatExpr);
+}
+{
+    // semantic check: signals not allowed
+    <APOS> <LBRACE>
+    expr = var_ref() { lcatExpr.addOperand(expr); }
+    (
+        { beginCapture(expr); } <COMMA> { endCapture(expr); }
+        expr = var_ref() { lcatExpr.addOperand(expr); }
+    )*
+    <RBRACE>
+    {
+        endDecl(lcatExpr);
+        return lcatExpr;
+    }
+}
+
+Operator compound_assign_oper() :
+{
+    Operator op;
+}
+{
+    (
+        <PLUS_ASSIGN> { op = Operator.ADD_ASSIGN; }
+    |
+        <MINUS_ASSIGN> { op = Operator.SUBTRACT_ASSIGN; }
+    |
+        <STAR_ASSIGN> { op = Operator.MULTIPLY_ASSIGN; }
+    |
+        <SLASH_ASSIGN> { op = Operator.DIVIDE_ASSIGN; }
+    |
+        <MOD_ASSIGN> { op = Operator.MODULO_ASSIGN; }
+    |
+        <LSHIFT_ASSIGN> { op = Operator.LEFT_SHIFT_ASSIGN; }
+    |
+        <RSHIFT_ASSIGN> { op = Operator.RIGHT_SHIFT_ASSIGN; }
+    |
+        <AND_ASSIGN> { op = Operator.AND_ASSIGN; }
+    |
+        <OR_ASSIGN> { op = Operator.OR_ASSIGN; }
+    |
+        <XOR_ASSIGN> { op = Operator.XOR_ASSIGN; }
+    |
+        <NAND_ASSIGN> { op = Operator.NAND_ASSIGN; }
+    |
+        <NOR_ASSIGN> { op = Operator.NOR_ASSIGN; }
+    |
+        <XNOR_ASSIGN> { op = Operator.XNOR_ASSIGN; }
+    )
+    { return op; }
+}
+
+ExpressionDecl new_expr() :
+{
+    ExpressionDecl expr;
+    NewDecl newExpr = new NewDecl();
+    beginDecl(newExpr);
+    ExpressionDecl resultExpr = newExpr;
+}
+{
+    <NEW>
+    (
+        // constructor arguments
+        LOOKAHEAD( <LPAREN> )
+        call_args(newExpr.getArguments())
+    |
+        // copy construction
+        expr = var_ref()
+        { resultExpr = new NewCopyDecl(expr); }
+    |
+        // dynamic array creation
+        // semantic check: size must be integer
+        <LBRACKET> expr = cond_expr() <RBRACKET>
+        { NewArrayDecl newArrayExpr = new NewArrayDecl(expr); }
+        // semantic check: source must be dynamic array of same type
+        [ <LPAREN> expr = var_ref() <RPAREN> { newArrayExpr.setSourceExpr(expr); } ]
+        { resultExpr = newArrayExpr; }
+    |
+        // no-argument object construction
+        { }
+    )
+    {
+        endDecl(newExpr);
+        if (resultExpr != newExpr) resultExpr.copyMetadata(newExpr);
+        return resultExpr;
+    }
+}
+
+ExpressionDecl const_expr() :
+{
+    ExpressionDecl expr;
+}
+{
+    // semantic check: no variable references or function calls
+    expr = cond_expr()
+    { return expr; }
+}
+
+void cond_expr_list(List exprs) :
+{
+    ExpressionDecl expr;
+}
+{
+    expr = cond_expr() { exprs.add(expr); }
+    (
+        { beginCapture(expr); } <COMMA> { endCapture(expr); }
+        expr = cond_expr() { exprs.add(expr); }
+    )*
+}
+
+ExpressionDecl cond_expr() :
+{
+    ExpressionDecl expr1, expr2, expr3;
+    beginMacro();
+}
+{
+    expr1 = log_or_expr()
+    [
+        {
+            OperationDecl opExpr = new OperationDecl(Operator.CONDITIONAL, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        <HOOK> expr2 = cond_expr() <COLON> expr3 = cond_expr()
+        {
+            opExpr.addOperand(expr2);
+            opExpr.addOperand(expr3);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    ]
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl log_or_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    beginMacro();
+}
+{
+    expr1 = log_and_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(Operator.LOGICAL_OR, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        <LOG_OR> expr2 = log_and_expr()
+        {
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl log_and_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    beginMacro();
+}
+{
+    expr1 = bit_or_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(Operator.LOGICAL_AND, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        <LOG_AND> expr2 = bit_or_expr()
+        {
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl bit_or_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = bit_xor_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <BIT_OR> { op = Operator.BITWISE_OR; }
+        |
+            <BIT_NOR> { op = Operator.BITWISE_NOR; }
+        )
+        expr2 = bit_xor_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl bit_xor_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = bit_and_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <BIT_XOR> { op = Operator.BITWISE_XOR; }
+        |
+            <BIT_XNOR> { op = Operator.BITWISE_XNOR; }
+        )
+        expr2 = bit_and_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl bit_and_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = equal_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <BIT_AND> { op = Operator.BITWISE_AND; }
+        |
+            <BIT_NAND> { op = Operator.BITWISE_NAND; }
+        )
+        expr2 = equal_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl equal_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = rel_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <EQ> { op = Operator.EQUAL; }
+        |
+            <NE> { op = Operator.NOT_EQUAL; }
+        |
+            <CASE_EQ> { op = Operator.EXACT_EQUAL; }
+        |
+            <CASE_NE> { op = Operator.EXACT_NOT_EQUAL; }
+        |
+            <WILD_EQ> { op = Operator.WILD_EQUAL; }
+        |
+            <WILD_NE> { op = Operator.WILD_NOT_EQUAL; }
+        )
+        expr2 = rel_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl rel_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    RangeListDecl ranges;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = shift_expr()
+    // semantic check: set expressions only allowed in constraint blocks
+    // semantic check: dist set expressions must be at top level of a constraint
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <LT> { op = Operator.LESS; }
+        |
+            <LE> { op = Operator.LESS_OR_EQUAL; }
+        |
+            <GT> { op = Operator.GREATER; }
+        |
+            <GE> { op = Operator.GREATER_OR_EQUAL; }
+        )
+        expr2 = shift_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    |
+        {
+            SetOperationDecl inExpr = new SetOperationDecl(expr1);
+            inExpr.setBeginLocation(expr1);
+            beginCapture(inExpr);
+        }
+        ( <BANG> { op = Operator.NOT_IN; } | { op = Operator.IN; } ) <IN>
+        ranges = range_list()
+        {
+            inExpr.setOperator(op);
+            inExpr.setRanges(ranges);
+            endDecl(inExpr);
+            endMacroSuffix(inExpr);
+            expr1 = inExpr;
+        }
+    |
+        {
+            SetOperationDecl distExpr = new SetOperationDecl(expr1, Operator.DIST);
+            distExpr.setBeginLocation(expr1);
+            beginCapture(distExpr);
+        }
+        <DIST> ranges = dist_range_list()
+        {
+            distExpr.setRanges(ranges);
+            endDecl(distExpr);
+            endMacroSuffix(distExpr);
+            expr1 = distExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+RangeListDecl range_list() :
+{
+    RangeDecl r;
+    RangeListDecl ranges = new RangeListDecl();
+    beginDecl(ranges);
+}
+{
+    <LBRACE>
+    r = range() { ranges.addRange(r); }
+    (
+        { beginCapture(r); } <COMMA> { endCapture(r); }
+        r = range() { ranges.addRange(r); }
+    )*
+    <RBRACE>
+    {
+        endDecl(ranges);
+        return ranges;
+    }
+}
+
+RangeDecl range() :
+{
+    RangeDecl r = new RangeDecl();
+    beginDecl(r);
+}
+{
+    internal_range(r)
+    {
+        endDecl(r);
+        return r;
+    }
+}
+
+void internal_range(RangeDecl r) :
+{
+    ExpressionDecl from, to;
+    beginMacro();
+}
+{
+    from = cond_expr() { r.setFrom(from); }
+    ( <COLON> to = cond_expr() | { to = from; } ) { r.setTo(to); }
+    { endMacro(r, true); }
+}
+
+RangeListDecl dist_range_list() :
+{
+    RangeDecl r;
+    RangeListDecl ranges = new RangeListDecl();
+    beginDecl(ranges);
+}
+{
+    <LBRACE>
+    r = dist_range() { ranges.addRange(r); }
+    (
+        { beginCapture(r); } <COMMA> { endCapture(r); }
+        r = dist_range() { ranges.addRange(r); }
+    )*
+    <RBRACE>
+    {
+        endDecl(ranges);
+        return ranges;
+    }
+}
+
+RangeDecl dist_range() :
+{
+    RangeDecl r;
+    ExpressionDecl weight;
+    boolean weightPerItem;;
+}
+{
+     r = range()
+     [
+        {
+            WeightedRangeDecl wr = new WeightedRangeDecl();
+            wr.setFrom(r.getFrom());
+            wr.setTo(r.getTo());
+            wr.copyMetadata(r);
+            beginDecl(wr);
+        }
+        (
+            <DIST_EACH> { wr.setWeightPerItem(true); }
+        |
+            <DIST_ACROSS> { wr.setWeightPerItem(false); }
+        )
+        weight = cond_expr()
+        {
+            wr.setWeight(weight);
+            endDecl(wr);
+            r = wr;
+        }
+    ]
+    { return r; }
+}
+
+ExpressionDecl shift_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = add_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <LSHIFT> { op = Operator.LEFT_SHIFT; }
+        |
+            <RSHIFT> { op = Operator.RIGHT_SHIFT; }
+        )
+        expr2 = add_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl add_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = mul_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <PLUS> { op = Operator.ADD; }
+        |
+            <MINUS> { op = Operator.SUBTRACT; }
+        )
+        expr2 = mul_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl mul_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    Operator op;
+    beginMacro();
+}
+{
+    expr1 = unary_expr()
+    (
+        {
+            OperationDecl opExpr = new OperationDecl(null, expr1);
+            opExpr.setBeginLocation(expr1);
+            beginCapture(opExpr);
+        }
+        (
+            <STAR> { op = Operator.MULTIPLY; }
+        |
+            <SLASH> { op = Operator.DIVIDE; }
+        |
+            <MOD> { op = Operator.MODULO; }
+        )
+        expr2 = unary_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr2);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr1 = opExpr;
+        }
+    )*
+    {
+        endMacro(expr1, false);
+        return expr1;
+    }
+}
+
+ExpressionDecl unary_expr() :
+{
+    ExpressionDecl expr;
+    Operator op;
+    beginMacro();
+}
+{
+    (
+        {
+            OperationDecl opExpr = new OperationDecl();
+            beginDecl(opExpr);
+        }
+        (
+            <MINUS> { op = Operator.NEGATIVE; }
+        |
+            <BANG> { op = Operator.LOGICAL_NEGATIVE; }
+        |
+            <TILDE> { op = Operator.BITWISE_NEGATIVE; }
+        |
+            <BIT_AND> { op = Operator.AND_REDUCTION; }
+        |
+            <UNARY_NAND> { op = Operator.NAND_REDUCTION; }
+        |
+            <BIT_OR> { op = Operator.OR_REDUCTION; }
+        |
+            <UNARY_NOR> { op = Operator.NOR_REDUCTION; }
+        |
+            <BIT_XOR> { op = Operator.XOR_REDUCTION; }
+        |
+            <UNARY_XNOR> { op = Operator.XNOR_REDUCTION; }
+        |
+            <GT_LT> { op = Operator.BITWISE_REVERSE; }
+        )
+        expr = unary_expr()
+        {
+            opExpr.setOperator(op);
+            opExpr.addOperand(expr);
+            endDecl(opExpr);
+            endMacroSuffix(opExpr);
+            expr = opExpr;
+        }
+    |
+        {
+            OperationDecl preExpr = new OperationDecl();
+            beginDecl(preExpr);
+        }
+        (
+            <INCR> { op = Operator.PRE_INCREMENT; }
+        |
+            <DECR> { op = Operator.PRE_DECREMENT; }
+        )
+        expr = var_ref()
+        {
+            preExpr.setOperator(op);
+            preExpr.addOperand(expr);
+            endDecl(preExpr);
+            endMacroSuffix(preExpr);
+            expr = preExpr;
+        }
+    |
+        expr = var_ref()
+        [
+            {
+                OperationDecl postExpr = new OperationDecl(null, expr);
+                postExpr.setBeginLocation(expr);
+                beginCapture(postExpr);
+            }
+            (
+                <INCR> { op = Operator.POST_INCREMENT; }
+            |
+                <DECR> { op = Operator.POST_DECREMENT; }
+            )
+            {
+                postExpr.setOperator(op);
+                endDecl(postExpr);
+                endMacroSuffix(postExpr);
+                expr = postExpr;
+            }
+        |
+            {
+                if (expr instanceof VarRefDecl) {
+                    ((VarRefDecl) expr).setFunctionCall(true);
+                }
+                FuncCallDecl callExpr = new FuncCallDecl(expr);
+                callExpr.setBeginLocation(expr);
+                beginCapture(callExpr);
+            }
+            call_args(callExpr.getArguments())
+            call_constraints(callExpr)
+            {
+                endDecl(callExpr);
+                endMacroSuffix(callExpr);
+                expr = callExpr;
+            }
+        ]
+    |
+        expr = literal()
+    |
+        expr = rcat_expr()
+    |
+        <LPAREN> expr = cond_expr() <RPAREN>
+    )
+    {
+        endMacro(expr, false);
+        return expr;
+    }
+}
+
+ExpressionDecl var_ref() :
+{
+    ExpressionDecl expr, varExpr;
+    String scope = null, id;
+    DummyDecl dummy = new DummyDecl();
+    beginDecl(dummy);
+    beginMacro();
+}
+{
+    (
+        <THIS> { varExpr = new ThisRefDecl(); }
+    |
+        <SUPER> { varExpr = new SuperRefDecl(); }
+    |
+        [ LOOKAHEAD(2) scope = identifier() <SCOPE> ]
+        id = identifierExt()
+        { varExpr = new VarRefDecl(id, scope); }
+    )
+    {
+        endDecl(dummy);
+        varExpr.copyMetadata(dummy);
+        endMacroSuffix(varExpr);
+        expr = varExpr;
+    }
+    ( expr = var_ref_suffix(expr) )*
+    {
+        endMacro(expr, false);
+        return expr;
+    }
+}
+
+ExpressionDecl var_ref_suffix(ExpressionDecl expr) :
+{
+    String id;
+    Token t;
+    ExpressionDecl index;
+}
+{
+    (
+        // member access
+        {
+            MemberAccessDecl memberExpr = new MemberAccessDecl(expr);
+            memberExpr.setBeginLocation(expr);
+            beginCapture(memberExpr);
+        }
+        <DOT> id = identifierExt()
+        {
+            memberExpr.setIdentifier(id);
+            endDecl(memberExpr);
+            endMacroSuffix(memberExpr);
+            expr = memberExpr;
+        }
+        [
+            // sample depth access
+            LOOKAHEAD(2)
+            {
+                DepthAccessDecl depthExpr = new DepthAccessDecl(expr);
+                depthExpr.setBeginLocation(expr);
+                beginCapture(depthExpr);
+            }
+            <DOT> t = <INTEGER_LITERAL>
+            {
+                int depth = IntegerLiteralDecl.parse(t.image);
+                depthExpr.setDepth(depth);
+                endDecl(depthExpr);
+                endMacroSuffix(depthExpr);
+                expr = depthExpr;
+            }
+        ]
+    |
+        // array and bit slice access
+        {
+            RangeDecl r;
+            DummyDecl dummy = new DummyDecl();
+            dummy.setBeginLocation(expr);
+            beginCapture(dummy);
+        }
+        <LBRACKET>
+        (
+            LOOKAHEAD( cond_expr() <COLON> )
+            r = range() <RBRACKET>
+            {
+                expr = new BitSliceAccessDecl(expr, r);
+            }
+        |
+            index = cond_expr() <RBRACKET>
+            {
+                ArrayAccessDecl arrayAccess = new ArrayAccessDecl(expr);
+                arrayAccess.addIndexExpr(index);
+                expr = arrayAccess;
+            }
+            (
+                // NOTE: The lookahead directive below is used to indicate
+                // that this production is greedy and to suppress the JavaCC
+                // warning that '[' is a common prefix of this expansion
+                // and the following expansion (also var_ref_suffix).
+                // This grammar mirrors Vera limitation that bit slice
+                // access cannot follow array access.
+                LOOKAHEAD(1)
+                <LBRACKET> index = cond_expr() <RBRACKET>
+                {
+                    arrayAccess.addIndexExpr(index);
+                }
+            )*
+        )
+        {
+            endDecl(dummy);
+            expr.copyMetadata(dummy);
+            endMacroSuffix(expr);
+        }
+    )
+    { return expr; }
+}
+
+void call_args(List args) :
+{
+    ExpressionDecl expr;
+}
+{
+    <LPAREN>
+    [
+        expr = call_arg() { args.add(expr); }
+        (
+            { beginCapture(expr); } <COMMA> { endCapture(expr); }
+            expr = call_arg() { args.add(expr); }
+        )*
+    ]
+    <RPAREN>
+}
+
+void call_constraints(FuncCallDecl callExpr) :
+{
+}
+{
+    [
+        {
+            ConstraintDecl cons = new ConstraintDecl();
+            callExpr.setConstraints(cons);
+        }
+        <WITH> constraint_block(cons)
+    ]
+}
+
+ExpressionDecl call_arg() :
+{
+    ExpressionDecl expr;
+}
+{
+    (
+        {
+            expr = new DefaultValueDecl();
+            beginDecl(expr);
+        }
+        <STAR>
+        {
+            endDecl(expr);
+        }
+    |
+        expr = cond_expr()
+    )
+    { return expr; }
+}
+
+LiteralDecl literal() :
+{
+    LiteralDecl expr;
+    Token t;
+    beginMacro();
+}
+{
+    (
+        t = <STRING_LITERAL>
+        { expr = new StringLiteralDecl(StringLiteralDecl.parse(t.image)); }
+    |
+        t = <INTEGER_LITERAL>
+        { expr = new IntegerLiteralDecl(IntegerLiteralDecl.parse(t.image)); }
+    |
+        t = <NUMBER_LITERAL>
+        { expr = BitVectorLiteralDecl.parse(t.image); }
+    |
+        t = <NULL>
+        { expr = new NullLiteralDecl(); }
+    |
+        t = <VOID>
+        { expr = new VoidLiteralDecl(); }
+    )
+    {
+        expr.setBeginLocation(t);
+        expr.setEndLocation(t);
+        expr.applyCommentsFrom(t, true);
+        endMacro(expr, true);
+        return expr;
+    }
+}
+
+ExpressionDecl rcat_expr() :
+{
+    ExpressionDecl expr1, expr2;
+    OperationDecl opExpr = new OperationDecl();
+    beginDecl(opExpr);
+    beginMacro();
+}
+{
+    <LBRACE> expr1 = cond_expr()
+    [
+        expr2 = rcat_expr()
+        {
+            opExpr.setOperator(Operator.REPLICATION);
+            opExpr.addOperand(expr1);
+            opExpr.addOperand(expr2);
+            expr1 = opExpr;
+        }
+    |
+        {
+            opExpr.setOperator(Operator.CONCATENATION);
+            opExpr.addOperand(expr1);
+            expr2 = expr1;
+            expr1 = opExpr;
+        }
+        (
+            { beginCapture(expr2); } <COMMA> { endCapture(expr2); }
+            expr2 = cond_expr() { opExpr.addOperand(expr2); }
+        )+
+    ]
+    <RBRACE>
+    {
+        endDecl(opExpr);
+        if (expr1 != opExpr) expr1.copyMetadata(opExpr);
+        endMacro(expr1, expr1 == opExpr);
+        return expr1;
+    }
+}
+
+String identifier() :
+{
+    Token t;
+}
+{
+    t = <IDENT>
+    { return t.image; }
+}
+
+String identifierExt() :
+{
+    Token t;
+}
+{
+    ( t = <IDENT> | t = <EXT_IDENT> )
+    { return t.image; }
+}
+
+String string() :
+{
+    Token t;
+}
+{
+    t = <STRING_LITERAL>
+    { return StringLiteralDecl.parse(t.image); }
+}

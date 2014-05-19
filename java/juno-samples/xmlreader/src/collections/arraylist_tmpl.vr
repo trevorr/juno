@@ -1,0 +1,249 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// ArrayList
+////////////////////////////////////////////////////////////
+
+typedef class ARRAY_LIST_ITERATOR_CLASS;
+
+class ARRAY_LIST_CLASS
+extends LIST_CLASS
+{
+    local ELEMENT_TYPE array[];
+    local integer count;
+
+    // Collection
+    virtual task add(ELEMENT_TYPE o);
+    virtual task clear();
+    virtual function integer size();
+
+    // List
+    virtual task addAt(integer index, ELEMENT_TYPE o);
+    virtual function ELEMENT_TYPE get(integer index);
+    virtual function LIST_ITERATOR_CLASS listIteratorAt(integer index);
+    virtual task removeAt(integer index);
+    virtual task set(integer index, ELEMENT_TYPE o);
+
+    // ArrayList
+    task new();
+}
+
+task ARRAY_LIST_CLASS::add(ELEMENT_TYPE o)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.add(%s)",
+        getObjectName(), DUMP_STRING(o)))
+
+    array[count++] = o;
+}
+
+task ARRAY_LIST_CLASS::clear()
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.clear()",
+        getObjectName()))
+
+    if (destroyOnRemove) {
+        integer i;
+
+        for (i = 0; i < count; ++i) {
+            ELEMENT_TYPE victim = array[i];
+            DESTROY(victim);
+        }
+    }
+
+    assoc_index(DELETE, array);
+    count = 0;
+}
+
+function integer ARRAY_LIST_CLASS::size()
+{
+    size = count;
+}
+
+task ARRAY_LIST_CLASS::addAt(integer index, ELEMENT_TYPE o)
+{
+    integer i;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.addAt(%0d, %s)",
+        getObjectName(), index, DUMP_STRING(o)))
+
+    assert(index >= 0 && index <= count);
+
+    for (i = count; i > index; --i) {
+        array[i] = array[i - 1];
+    }
+    ++count;
+
+    array[index] = o;
+}
+
+function ELEMENT_TYPE ARRAY_LIST_CLASS::get(integer index)
+{
+    assert(index >= 0 && index < count);
+
+    get = array[index];
+}
+
+function LIST_ITERATOR_CLASS ARRAY_LIST_CLASS::listIteratorAt(integer index)
+{
+    ARRAY_LIST_ITERATOR_CLASS ali = new(this, index);
+
+    listIteratorAt = ali;
+}
+
+task ARRAY_LIST_CLASS::removeAt(integer index)
+{
+    integer i;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.removeAt(%0d)",
+        getObjectName(), index))
+
+    assert(index >= 0 && index < count);
+
+    if (destroyOnRemove) {
+        ELEMENT_TYPE victim = array[index];
+        DESTROY(victim);
+    }
+
+    for (i = index + 1; i < count; ++i) {
+        array[i - 1] = array[i];
+    }
+    --count;
+
+    assoc_index(DELETE, array, count);
+}
+
+task ARRAY_LIST_CLASS::set(integer index, ELEMENT_TYPE o)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.set(%0d, %s)",
+        getObjectName(), index, DUMP_STRING(o)))
+
+    assert(index >= 0 && index < count);
+
+    if (destroyOnRemove) {
+        ELEMENT_TYPE victim = array[index];
+        DESTROY(victim);
+    }
+
+    array[index] = o;
+}
+
+task ARRAY_LIST_CLASS::new()
+{
+    setClassName("ArrayList");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new()",
+        getObjectName()))
+
+    count = 0;
+}
+
+////////////////////////////////////////////////////////////
+// ArrayListIterator
+////////////////////////////////////////////////////////////
+
+local class ARRAY_LIST_ITERATOR_CLASS
+extends LIST_ITERATOR_CLASS
+{
+    local LIST_CLASS list;
+    local integer curIndex;
+    local integer lastIndex;
+
+    task new(LIST_CLASS _list, integer index = 0);
+
+    virtual task add(ELEMENT_TYPE o);
+    virtual function bit hasNext();
+    virtual function bit hasPrevious();
+    virtual function ELEMENT_TYPE next();
+    virtual function integer nextIndex();
+    virtual function ELEMENT_TYPE previous();
+    virtual function integer previousIndex();
+    virtual task remove();
+    virtual task set(ELEMENT_TYPE o);
+
+    local task checkLast();
+}
+
+task ARRAY_LIST_ITERATOR_CLASS::new(LIST_CLASS _list, integer index = 0)
+{
+    setClassName("ArrayListIterator");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new(%s, %0d)",
+        getObjectName(), OBJECT_NAME(_list), index))
+
+    list = _list;
+    curIndex = index;
+    lastIndex = -1;
+}
+
+task ARRAY_LIST_ITERATOR_CLASS::add(ELEMENT_TYPE o)
+{
+    list.addAt(curIndex++, o);
+    lastIndex = -1;
+}
+
+function bit ARRAY_LIST_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (curIndex < list.size());
+}
+
+function bit ARRAY_LIST_ITERATOR_CLASS::hasPrevious()
+{
+    hasPrevious = (curIndex > 0);
+}
+
+function ELEMENT_TYPE ARRAY_LIST_ITERATOR_CLASS::next()
+{
+    next = list.get(curIndex);
+    lastIndex = curIndex++;
+}
+
+function integer ARRAY_LIST_ITERATOR_CLASS::nextIndex()
+{
+    nextIndex = curIndex;
+}
+
+function ELEMENT_TYPE ARRAY_LIST_ITERATOR_CLASS::previous()
+{
+    previous = list.get(--curIndex);
+    lastIndex = curIndex;
+}
+
+function integer ARRAY_LIST_ITERATOR_CLASS::previousIndex()
+{
+    previousIndex = curIndex - 1;
+}
+
+task ARRAY_LIST_ITERATOR_CLASS::remove()
+{
+    checkLast();
+    list.removeAt(lastIndex);
+    if (lastIndex < curIndex) --curIndex;
+    lastIndex = -1;
+}
+
+task ARRAY_LIST_ITERATOR_CLASS::set(ELEMENT_TYPE o)
+{
+    checkLast();
+    list.set(lastIndex, o);
+}
+
+task ARRAY_LIST_ITERATOR_CLASS::checkLast()
+{
+    if (lastIndex == -1) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+}
+

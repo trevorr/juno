@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!DOCTYPE document [
+<!ELEMENT document (#PCDATA | test | xi:include | myns:elem1 | elem2)* >
+<!ENTITY % xx '&#37;zz;'>
+<!ENTITY % zz '&#60;!ENTITY tricky "error-prone" >'>
+%xx;
+<!ENTITY example "<p>An ampersand (&#38;#38;) may be escaped numerically (&#38;#38;#38;) or with a general entity (&amp;amp;). &tricky;</p>">
+]>
+<document xmlns="foo" xmlns:xi="http://www.w3.org/2001/XInclude">
+    plain text
+    <!-- comment -->
+    <xi:include href="test2.xml"/>
+    <myns:elem1 attr1="value1" attr2="value2" xmlns:myns="myns">
+    </myns:elem1>
+    <?pi <<<<?????>
+    &example;
+    <test>This sample shows a &tricky; method.</test>
+</document>

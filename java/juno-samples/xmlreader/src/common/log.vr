@@ -1,0 +1,626 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include <vera_defines.vrh>
+#include <ListMacros.vrh>
+#include "common.vri"
+#include "property.vrh"
+
+enum LogSeverity =
+    LS_DEBUG2,
+    LS_DEBUG1,
+    LS_DEBUG,
+    LS_CONFIG,
+    LS_WARNING,
+    LS_ERROR,
+    LS_FATAL,
+    LS_SYSTEM;
+#define LS_COUNT 8
+
+////////////////////////////////////////////////////////////
+// LogFile
+////////////////////////////////////////////////////////////
+
+/// Provides object-oriented access to a log file that is opened
+/// on the first write.
+class LogFile
+{
+    local string filename;
+    local string mode;
+    local integer fd = 0;
+    local bit alwaysFlush = 0;
+    local integer startSeconds;
+
+    task new(string _filename, (string _mode = "w"))
+    {
+        filename = _filename;
+        mode = _mode;
+        alwaysFlush = getPropBool("flush=", 0);
+        startSeconds = get_systime();
+    }
+
+    /// Returns the filename of this log file.
+    function string getFilename()
+    {
+        getFilename = filename;
+    }
+
+    /// Builds a log string in the proper format.
+    function string formatString(string source, LogSeverity severity, string type, string msg)
+    {
+        string eol = (msg.getc(msg.len() - 1) != 10) ? "\n" : "";
+
+        formatString = psprintf("%0d,%s,%s,%s,%s,%s%s",
+            getTime64(), secsToStr(get_systime() - startSeconds), source,
+            sevToStr(severity), type, msg, eol);
+    }
+
+    /// Prints a string to the log.
+    task printString(string str)
+    {
+        checkOpen();
+        fprintf(fd, "%s", str);
+        if (alwaysFlush) {
+            fflush(fd);
+        }
+    }
+
+    /// Opens the log file if it is not already open.
+    local task checkOpen()
+    {
+        if (!fd) {
+            printf("Opening log file: %s\n", filename);
+            if (filename == "stdout") {
+                fd = stdout;
+            } else {
+                fd = fopen(filename, mode);
+                if (!fd) {
+                    error("Error opening log file: %s\n", filename);
+                }
+            }
+        }
+    }
+
+    /// Flushes unwritten entries to the log file.
+    task flush()
+    {
+        // do nothing if not open
+        if (fd) {
+            fflush(fd);
+        }
+    }
+
+    /// Closes the log file if it is currently open.
+    task close()
+    {
+        // do nothing if not open
+        if (fd) {
+            // close and invalidate file handle
+            fclose(fd);
+            fd = 0;
+
+            // append to file if reopened
+            mode = "a";
+        }
+    }
+
+}
+
+////////////////////////////////////////////////////////////
+// ErrorListener
+////////////////////////////////////////////////////////////
+
+/// Interface class for responding to error notification.
+virtual class ErrorListener
+{
+    virtual task notify(LogSeverity severity);
+}
+
+////////////////////////////////////////////////////////////
+// VeraList_ErrorListener
+////////////////////////////////////////////////////////////
+
+MakeVeraList(ErrorListener)
+
+////////////////////////////////////////////////////////////
+// ErrorManager
+////////////////////////////////////////////////////////////
+
+/// Provides global error counting and notification.
+class ErrorManager
+{
+    local static LogFile defLogFile;
+
+    local integer maxErrors;
+    local VeraList_ErrorListener listeners;
+    local bit notifying;
+    local integer sevCounts[LS_COUNT];
+
+    task new()
+    {
+        integer i;
+
+        if (defLogFile == null) {
+            defLogFile = new(getPropStr("log_file=", "sim.out"),
+                getPropStr("log_open_mode=", "w"));
+        }
+
+        maxErrors = getPropInt("max_errors=", 0);
+        listeners = new;
+        notifying = 0;
+        for (i = 0; i < LS_COUNT; ++i) {
+            sevCounts[i] = 0;
+        }
+    }
+
+    /// Returns the default log file.
+    function LogFile getDefLogFile()
+    {
+        getDefLogFile = defLogFile;
+    }
+
+    /// Adds an error notification listener.
+    task addListener(ErrorListener listener)
+    {
+        listeners.push_back(listener);
+    }
+
+    /// Returns the number of error notifications of the given severity.
+    function integer getErrorCount(LogSeverity severity)
+    {
+        getErrorCount = sevCounts[severity];
+    }
+
+    /// Notifies the error manager of an error condition.
+    /// The error manager will notify all error listeners,
+    /// and then terminate the simulation if appropriate.
+    task notify(LogSeverity severity, string msg = null)
+    {
+        ++sevCounts[severity];
+
+        if (severity >= LS_WARNING && severity <= LS_FATAL) {
+
+            // dump call stack on warnings and errors
+            defLogFile.printString(defLogFile.formatString(
+                "log", LS_SYSTEM, "trace", psprintf("%m")));
+
+            // upgrade error to fatal if maximum errors reached
+            if (severity == LS_ERROR && maxErrors >= 0 && sevCounts[severity] > maxErrors) {
+                defLogFile.printString(defLogFile.formatString(
+                    "log", LS_SYSTEM, "msg", "Maximum errors exceeded"));
+                severity = LS_FATAL;
+            }
+
+            if (!notifying) {
+                VeraListIterator_ErrorListener i, f;
+
+                notifying = 1;
+
+                i = listeners.start();
+                f = listeners.finish();
+                while (!i.eq(f)) {
+                    ErrorListener listener = i.data();
+                    listener.notify(severity);
+                    i.next();
+                }
+
+                notifying = 0;
+            } else {
+                msg = "Recursive error notification";
+                abort(msg, msg);
+            }
+
+            if (severity == LS_FATAL) {
+                abort("Fatal error encountered", msg);
+            }
+        }
+    }
+
+    /// Logs a fatal error message, logs the finish message,
+    /// and aborts the simulation.
+    local task abort(string msg, string lastErrorMsg = null)
+    {
+        string logStr = defLogFile.formatString("log", LS_FATAL, "msg", msg);
+
+        defLogFile.printString(logStr);
+        finish("abended", lastErrorMsg);
+        error("%s", logStr);
+    }
+
+    /// Logs a "finish" message to the default log file,
+    /// containing the total count of errors and warnings.
+    task finish(string status, string lastErrorMsg = null)
+    {
+        string msg, rec;
+
+        msg = psprintf("%s (%0d warnings, %0d errors)",
+            status, sevCounts[LS_WARNING], sevCounts[LS_ERROR] + sevCounts[LS_FATAL]);
+        if (lastErrorMsg != null) {
+            msg = { msg, ", last error: ", lastErrorMsg };
+        }
+        rec = defLogFile.formatString("log", LS_SYSTEM, "finish", msg);
+        defLogFile.printString(rec);
+        printf("%s", rec);
+    }
+
+}
+
+////////////////////////////////////////////////////////////
+// LogInterface
+////////////////////////////////////////////////////////////
+
+/// Provides an interface to a shared log file that enforces a logging policy
+/// and provides logging context.
+class LogInterface
+{
+    local static ErrorManager errMgr;
+    local static bit msgWatchdog = FALSE;
+
+    local string source;
+    local LogFile logFile;
+    local LogSeverity minSeverity;
+    local LogSeverity echoSeverity;
+    local integer startTime;
+
+    local integer indentLevel;
+    local string indentString;
+
+    task new(string _source, LogFile _logFile = null)
+    {
+        if (errMgr == null) {
+            errMgr = new;
+        }
+
+        source = _source;
+        logFile = _logFile != null ? _logFile : errMgr.getDefLogFile();
+        minSeverity = strToSev(getPropStr("log_level=", "config"));
+        echoSeverity = strToSev(getPropStr("log_echo_level=", "error"));
+        startTime = getPropInt("log_start_time=", 0);
+
+        indentLevel = 0;
+        indentString = "";
+    }
+
+    /// Returns the global error manager.
+    function ErrorManager getErrorManager()
+    {
+        getErrorManager = errMgr;
+    }
+
+    /// Returns the source name for this interface.
+    function string getSource()
+    {
+        getSource = source;
+    }
+
+    /// Sets the source name for this interface.
+    task setSource(string _source)
+    {
+        source = _source;
+    }
+
+    /// Returns the log file associated with this interface.
+    function LogFile getLogFile()
+    {
+        getLogFile = logFile;
+    }
+
+    /// Returns the minimum severity for writing a message to the log.
+    function LogSeverity getMinSeverity()
+    {
+        getMinSeverity = minSeverity;
+    }
+
+    /// Sets the minimum severity for writing a message to the log.
+    task setMinSeverity(LogSeverity _minSeverity)
+    {
+        minSeverity = _minSeverity;
+    }
+
+    /// Returns the minimum severity for echoing a log message to the console.
+    function LogSeverity getEchoSeverity()
+    {
+        getEchoSeverity = echoSeverity;
+    }
+
+    /// Sets the minimum severity for echoing a log message to the console.
+    task setEchoSeverity(LogSeverity _echoSeverity)
+    {
+        echoSeverity = _echoSeverity;
+    }
+
+    /// Returns the time that logging should begin.
+    function integer getStartTime()
+    {
+        getStartTime = startTime;
+    }
+
+    /// Sets the time that logging should begin.
+    task setStartTime(integer _startTime)
+    {
+        startTime = _startTime;
+    }
+
+    /// Loads the log interface settings from command line arguments.
+    virtual task loadSettings(string prefix)
+    {
+        string s;
+        integer i;
+
+        s = getPropStr({prefix, "_log="}, null);
+        if (s != null) {
+            minSeverity = strToSev(s);
+            if (minSeverity > LS_FATAL) {
+                minSeverity = LS_FATAL;
+            }
+        }
+        s = getPropStr({prefix, "_log_echo="}, null);
+        if (s != null) {
+            echoSeverity = strToSev(s);
+        }
+        i = getPropInt({prefix, "_log_start_time="}, -1);
+        if (i >= 0) {
+            startTime = i;
+        }
+    }
+
+    /// Copies the log interface settings from another interface.
+    virtual task copySettings(LogInterface logIntf)
+    {
+        minSeverity = logIntf.minSeverity;
+        echoSeverity = logIntf.echoSeverity;
+        startTime = logIntf.startTime;
+    }
+
+    /// Determines whether a message will actually be logged.
+    function bit wouldLog(LogSeverity severity)
+    {
+        wouldLog = (get_time(LO) >= startTime &&
+            (severity >= minSeverity || severity >= echoSeverity));
+
+        if(wouldLog) {
+            msgWatchdog = TRUE;     // Flag that a message was printed.
+        }
+    }
+
+    /// Returns the current message indent level.
+    function integer getIndent()
+    {
+        getIndent = indentLevel;
+    }
+
+    /// Sets the new message indent level.
+    task setIndent(integer level)
+    {
+        static string spaces = "                                                            !";
+
+        indentLevel = level;
+        indentString = spaces.substr(0, level - 1);
+    }
+
+    /// Increases the message indent level.
+    task pushIndent()
+    {
+        setIndent(indentLevel + 2);
+    }
+
+    /// Decreases the message indent level.
+    task popIndent()
+    {
+        setIndent(indentLevel - 2);
+    }
+
+    /// Logs a message without checking logging policy (used internally).
+    task printLogUnchecked(LogSeverity severity, string type, string msg)
+    {
+        string logStr;
+
+        logStr = logFile.formatString(source, severity, type, { indentString, msg });
+
+        if (severity >= minSeverity) {
+            logFile.printString(logStr);
+        }
+        if (severity >= echoSeverity) {
+            printf("%s", logStr); // ensure that "%" in logStr is ignored
+        }
+    }
+
+    /// Logs a message, if the logging policy is met.
+    task printLog(LogSeverity severity, string type, string msg)
+    {
+        if (wouldLog(severity)) {
+            printLogUnchecked(severity, type, msg);
+        }
+    }
+
+    /// Logs a message (of type "msg"), if the logging policy is met.
+    task printLogMsg(LogSeverity severity, string msg)
+    {
+        if (wouldLog(severity)) {
+            printLogUnchecked(severity, "msg", msg);
+        }
+    }
+
+    /// Notifies the error manager of an error condition.
+    task signalError(LogSeverity severity, string msg = null)
+    {
+        errMgr.notify(severity, msg);
+    }
+
+    /// Logs a message, if the logging policy is met,
+    /// and notifies the error manager of the severity.
+    task log(LogSeverity severity, string type, string msg)
+    {
+        printLog(severity, type, msg);
+        errMgr.notify(severity, msg);
+    }
+
+    /// Logs a message (of type "msg"), if the logging policy is met,
+    /// and notifies the error manager of the severity.
+    task logMsg(LogSeverity severity, string msg)
+    {
+        printLogMsg(severity, msg);
+        errMgr.notify(severity, msg);
+    }
+
+    /// Logs a "finish" message to the default log file.
+    task finish()
+    {
+        errMgr.finish("completed");
+    }
+
+    function bit getMsgWatchdog()
+    {
+        getMsgWatchdog = msgWatchdog;
+        msgWatchdog = FALSE;
+    }
+}
+
+/// Creates a LogInterface that (optionally) inherits the name and settings
+/// of a parent LogInterface.
+function LogInterface newChildLogInterface(
+    string name, LogInterface parentLogIntf = null, string prefix = null)
+{
+    LogInterface logIntf;
+
+    if (parentLogIntf != null) {
+        name = { parentLogIntf.getSource(), ".", name };
+    }
+    logIntf = new(name);
+    if (parentLogIntf != null) {
+        logIntf.copySettings(parentLogIntf);
+    }
+    if (prefix != null) {
+        logIntf.loadSettings(prefix);
+    }
+
+    newChildLogInterface = logIntf;
+}
+
+////////////////////////////////////////////////////////////
+// Optimized logging wrapper macros
+////////////////////////////////////////////////////////////
+
+// Object creation in JavaDV does not affect the random state
+#ifndef __JUNO__
+
+#define SAVE_RANDOM_STATE VeraRandomState randomState; getstate(randomState);
+#define RESTORE_RANDOM_STATE setstate(randomState);
+
+#else
+
+#define SAVE_RANDOM_STATE
+#define RESTORE_RANDOM_STATE
+
+#endif
+
+/// Calls printLog() if wouldLog() is true.
+#define PRINT_LOG(intf,sev,type,_msg) \
+    {if (intf.wouldLog(sev)) { SAVE_RANDOM_STATE intf.printLogUnchecked(sev, type, _msg); RESTORE_RANDOM_STATE }}
+
+/// Calls printLogMsg() if wouldLog() is true.
+#define PRINT_LOG_MSG(intf,sev,_msg) \
+    {if (intf.wouldLog(sev)) { SAVE_RANDOM_STATE intf.printLogUnchecked(sev, "msg", _msg); RESTORE_RANDOM_STATE }}
+
+/// Calls log() if wouldLog() is true.
+#define LOG(intf,sev,type,_msg) \
+    {if (intf.wouldLog(sev)) { SAVE_RANDOM_STATE intf.log(sev, type, _msg); RESTORE_RANDOM_STATE }}
+
+/// Calls logMsg() if wouldLog() is true.
+#define LOG_MSG(intf,sev,_msg) \
+    {if (intf.wouldLog(sev)) { SAVE_RANDOM_STATE intf.logMsg(sev, _msg); RESTORE_RANDOM_STATE }}
+
+////////////////////////////////////////////////////////////
+// Conversion helpers
+////////////////////////////////////////////////////////////
+
+/// Converts a string to a log severity.
+function LogSeverity strToSev(string str)
+{
+    case (str) {
+        "debug2" : strToSev = LS_DEBUG2;
+        "debug1" : strToSev = LS_DEBUG1;
+        "debug" : strToSev = LS_DEBUG;
+        "config" : strToSev = LS_CONFIG;
+        "warning" : strToSev = LS_WARNING;
+        "error" : strToSev = LS_ERROR;
+        "fatal" : strToSev = LS_FATAL;
+        "system" : strToSev = LS_SYSTEM;
+        default : error("Unknown log severity %s!\n", str);
+    }
+}
+
+/// Converts a log severity to a string.
+function string sevToStr(LogSeverity sev)
+{
+    case (sev) {
+        LS_DEBUG2 : sevToStr = "debug2";
+        LS_DEBUG1 : sevToStr = "debug1";
+        LS_DEBUG : sevToStr = "debug";
+        LS_CONFIG : sevToStr = "config";
+        LS_WARNING : sevToStr = "warning";
+        LS_ERROR : sevToStr = "error";
+        LS_FATAL : sevToStr = "fatal";
+        LS_SYSTEM : sevToStr = "system";
+        default : error("Unknown log severity %s!\n", sev);
+    }
+}
+
+/// Puts double quotes around a string if it contains any commas.
+function string quoteMsg(string msg)
+{
+    if (msg.search(",") >= 0 && msg.search("\"") < 0) {
+        msg = { "\"", msg, "\"" };
+    }
+    quoteMsg = msg;
+}
+
+/// Converts a time in seconds to H:MM:SS format.
+function string secsToStr(integer time)
+{
+    integer hours = time / 3600;
+    integer mins = (time % 3600) / 60;
+    integer secs = time % 60;
+
+    // unfortunately, Vera does not have 0-padding for decimals
+    secsToStr = psprintf("%0d:%s%0d:%s%0d", hours,
+        mins < 10 ? "0" : "", mins,
+        secs < 10 ? "0" : "", secs);
+}
+
+function Qword getTime64()
+{
+    getTime64 = { get_time(HI), get_time(LO) };
+}
+
+////////////////////////////////////////////////////////////
+// Assertion failure task
+////////////////////////////////////////////////////////////
+
+#ifdef assertFailed
+#undef assertFailed
+#endif
+
+task fatalError(string msg)
+{
+    LogInterface logIntf = new("log");
+    logIntf.logMsg(LS_FATAL, msg);
+}
+
+task assertFailed(string msg, string file, integer line, string expr)
+{
+    fatalError(psprintf(msg, file, line, expr));
+}
+

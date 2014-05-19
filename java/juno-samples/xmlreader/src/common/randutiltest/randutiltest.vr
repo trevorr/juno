@@ -1,0 +1,78 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "randutil.vrh"
+#include "miscutil.vrh"
+
+program main
+{
+    RandomMask mask, mask2;
+    integer count, count2;
+
+    mask = randomBits(0);
+    printf("randomBits(0) = %x\n", mask);
+    assert(mask == 0);
+
+    mask = randomBits(1);
+    printf("randomBits(1) = %x\n", mask);
+    assert(mask <= 64'h1);
+
+    mask = randomBits(32);
+    printf("randomBits(32) = %x\n", mask);
+    assert(mask <= 64'hFFFFFFFF);
+
+    mask = randomBits(33);
+    printf("randomBits(33) = %x\n", mask);
+    assert(mask <= 64'h1FFFFFFFF);
+
+    mask = randomBits(64);
+    printf("randomBits(64) = %x\n\n", mask);
+
+    mask = randomMask(24, 8, 16);
+    count = bitCount(mask);
+    printf("randomMask(24, 8, 16) = %x (%0d set)\n", mask, count);
+    assert(8 <= count && count <= 16);
+    mask = randomMask(24, 8, 16);
+    count = bitCount(mask);
+    printf("randomMask(24, 8, 16) = %x (%0d set)\n", mask, count);
+    assert(8 <= count && count <= 16);
+    mask = randomMask(24, 8, 16);
+    count = bitCount(mask);
+    printf("randomMask(24, 8, 16) = %x (%0d set)\n\n", mask, count);
+    assert(8 <= count && count <= 16);
+
+    mask = randomMask(64, 24, 40);
+    count = bitCount(mask);
+    printf("randomMask(64, 24, 40) = %x (%0d set)\n", mask, count);
+    assert(24 <= count && count <= 40);
+    mask = randomMask(64, 24, 40);
+    count = bitCount(mask);
+    printf("randomMask(64, 24, 40) = %x (%0d set)\n", mask, count);
+    assert(24 <= count && count <= 40);
+    mask = randomMask(64, 24, 40);
+    count = bitCount(mask);
+    printf("randomMask(64, 24, 40) = %x (%0d set)\n\n", mask, count);
+    assert(24 <= count && count <= 40);
+
+    mask = randomMask(64, 24, 40);
+    count = bitCount(mask);
+    mask2 = randomMaskSubset(mask, count, count - 8, count - 4);
+    count2 = bitCount(mask2);
+    printf("randomMaskSubset(%x, %0d, %0d, %0d) = %x (%0d set)\n\n",
+        mask, count, count - 8, count - 4, mask2, count2);
+    assert(count - 8 <= count2 && count2 <= count - 4);
+    assert((mask2 & ~mask) == 0);
+}
+

@@ -1,0 +1,299 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ * 
+ *
+ * Vera program that shows off various features including:
+ *
+ * Signal sampling and driving
+ * Random constraints
+ * Pass by reference
+ * Backwards bit indices (e.g. myreg[4:7])
+ * Various built-in functions (printf, error, get_time)
+ * Pre-processor macros
+ * File I/O
+ * Mailboxes
+ * Trigger/Sync
+ * Associative Arrays
+ */
+
+#include <vera_defines.vrh>
+
+// include interfaces
+#include "dut.if.vrh"
+
+/* Define an assert macro to be used by vera code.
+ *
+ * Note that Juno treats 'assert' as a built-in function and will translate
+ * any usage to use the assert mechanism in Java. For this reason, we wrap
+ * the macro definition in an #ifdef __JUNO__. The __JUNO__ symbol is defined
+ * when Juno is analyzing a Vera source file
+ */
+#ifndef __JUNO__
+#define assert(expr) if ((!(expr)) !== 0) \
+    error("Assertion failed(%s, line %0d): %s\n", __FILE__, __LINE__, "expr")
+#endif
+
+// define ports, binds here if necessary
+port dutPort
+{
+    clk;
+    numClks;
+    flopIn;
+    flopOut;
+}
+
+bind dutPort dutBind
+{
+    clk     dut.clk;
+    numClks dut.num_clks;
+    flopIn  dut.flop_in;
+    flopOut dut.flop_out;
+}
+
+class FlopTest
+{
+    rand bit[31:0] value;
+    rand bit[3:0] bit_7_4;
+    rand reg[1:0] bit_1_0; // note use of alternate 'reg' keyword
+
+    constraint cc1
+    {
+        (value & 'hc) != 0;
+        bit_7_4 < 'h6;
+        bit_1_0 >= 'b1;
+    }
+
+    task post_randomize()
+    {
+        value[7:4] = bit_7_4;
+        value[1:0] = bit_1_0;
+
+        if(bit_7_4 >= 6)
+        {
+            error("Constraint solving failed: bit_7_4 must be < 6. Actual: 0x%x\n",
+                bit_7_4);
+        }
+        else if(bit_1_0 < 1)
+        {
+            error("Constraint solving failed: bit_1_0 must be >= 1. Actual: 0x%x\n",
+                bit_1_0);
+        }
+        else if(value[2:3] == 0)
+        {
+            // note backwards indices in this else if condition    
+            error("Constraint solving failed: value[2:3] must be != 0. Actual: 0x%x\n",
+                value[3:2]);
+        }
+    }
+
+    task run(var integer count, string filename)
+    {
+        this.runRandom(count);
+        this.runFromFile(filename);
+    }
+
+    task runRandom(var integer count)
+    {
+        integer actVal;
+        integer value_1;
+        integer origCount = count;
+        for(; count >= 0; --count)
+        {
+            integer status = 0;
+            value_1 = value;
+            status = randomize();
+            dutBind.$flopIn = value;
+            @(posedge dutBind.$clk);
+            actVal = dutBind.$flopOut;
+
+            if(value_1 !== actVal)
+            {
+                printf("%0d: ERROR(FlopTest): Expected 0x%08x, Observed: 0x%08x\n", 
+                    get_time(LO), value_1, actVal);
+                return;
+            }
+        }
+
+        // put X's on the flop
+        dutBind.$flopIn = 'hx;
+        @(posedge dutBind.$clk);
+
+        printf("Random FlopTest completed %0d iterations succesfully\n", origCount);
+    }
+
+    task runFromFile(string filename)
+    {
+        integer count = 0;
+        integer actVal;
+        bit success = 1;
+        bit[31:0] driveVal, driveVal_1;
+        integer fd = fopen(filename, "r", SILENT);
+        assert(fd != 0);
+
+        while(1)
+        {
+            driveVal_1 = driveVal;
+            driveVal = freadh(fd);
+            dutBind.$flopIn = driveVal;
+            @(posedge dutBind.$clk);
+            actVal = dutBind.$flopOut;
+
+            if(driveVal_1 !== actVal)
+            {
+                success = 0;
+                break;
+            }
+
+            if(feof(fd) == 1) break;
+            ++count;
+        }
+        if(success)
+            printf("File-based FlopTest completed %0d iterations succesfully\n", count);
+        else
+            printf("%0d: ERROR(FlopTest): Expected 0x%08x, Observed: 0x%08x\n", 
+                get_time(LO), driveVal_1, actVal);
+        fclose(fd);
+    }
+}
+
+program main
+{
+    runAllTests();
+}
+
+task runAllTests()
+{
+    shadow integer count = 10;
+
+    fork
+    {
+        // test basic sampling of a signal
+        test_sample(count);
+    }
+    {
+        // test driving a flop and then sampling that value
+        // also shows off getting a plusarg
+        // also shows built-in bittostr functionality
+        // also shows off random constraints
+        // also shows off file I/O
+        FlopTest ft = new;
+        bit[2047:0] fname = get_plus_arg(STR, "filename=");
+        string fnamestr = "";
+        fnamestr.bittostr(fname);
+        ft.run(count, fnamestr);
+    }
+    {
+        // test passing by reference (test_passbyvar declares its parameter
+        // as var)
+        integer value = 4;
+        test_passbyvar(value);
+        if(value != 3)
+        {
+            assert(value == 3);
+        }
+        else
+        {
+            printf("pass by var was successful\n");
+        }
+    }
+    {
+        // test 2 threads passing data via a mailbox
+        test_mailboxes(count);
+    }
+    {
+        integer status = test_triggersync();
+        assert(status == 1);
+    }
+    {
+        test_assocarrays();
+    }
+    join all
+}
+
+task test_sample(integer count)
+{
+    integer i = 0;
+    for(i = 0; i < count; ++i)
+    {
+        @(posedge dutBind.$clk);
+        printf("NumClks: %0d\n", dutBind.$numClks);
+    }
+}
+
+task test_passbyvar(var integer value)
+{
+    --value;
+}
+
+task test_mailboxes(integer count)
+{
+    integer mb = alloc(MAILBOX, 0, 1);
+    shadow integer i;
+    fork
+    {
+        for(i = 0; i < count; ++i)
+        {
+            integer expVal = i;
+            integer actVal;
+            mailbox_get(WAIT, mb, actVal);
+            assert(actVal === expVal);
+        }
+    }
+    {
+        for(i = 0; i < count; ++i)
+        {
+            @(posedge dutBind.$clk);
+            mailbox_put(mb, i);
+        }
+    }
+    join all
+    printf("Mailbox test passed\n");
+}
+
+function integer test_triggersync()
+{
+    event e;
+    test_triggersync = 1; 
+
+    fork
+    {
+        sync(ALL, e);
+    }
+    {
+        @(posedge dutBind.$clk);
+        trigger(e);
+    }
+    join all
+
+    printf("Trigger/Sync test passed\n");
+}
+
+task test_assocarrays()
+{
+    string strArr[];
+    integer numElts = 0;
+
+    strArr[4] = "foo";
+    strArr[100] = "bar";
+
+    numElts = assoc_index(CHECK, strArr);
+    if(numElts != 2)
+    {
+        error("strArr must contain 2 elements. Actual: %0d\n", numElts);
+    }
+    assert(strArr[4] == "foo");
+    assert(strArr[100] == "bar");
+
+    printf("AssocArray test passed\n");
+}

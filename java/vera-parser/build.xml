@@ -1,0 +1,101 @@
+<project name="vera-parser" default="compile" basedir=".">
+    <property environment="env" />
+    <property name="src" location="src" />
+    <property name="bin" location="bin" />
+    <property name="dist" location="dist" />
+    <property name="build.sysclasspath" value="last" />
+
+    <import file="../jove-defs.xml" optional="true" />
+
+    <target name="init">
+        <tstamp />
+        <mkdir dir="${bin}" />
+    </target>
+
+    <target name="javacc" depends="-token-xlat-table" />
+
+    <property name="VeraPPParser.jj" location="${src}/com/newisys/parser/verapp/VeraPPParser.jj" />
+    <target name="-javacc-verapp" depends="init">
+        <javacc target="${VeraPPParser.jj}" javacchome="${env.JAVACC_HOME}" />
+        <delete>
+            <fileset dir="${src}/com/newisys/parser/verapp">
+                <include name="ParseException.java" />
+                <include name="Token.java" />
+                <include name="TokenMgrError.java" />
+            </fileset>
+        </delete>
+    </target>
+
+    <property name="VeraParser.jj" location="${src}/com/newisys/parser/vera/VeraParser.jj" />
+    <target name="-javacc-vera" depends="-javacc-verapp">
+        <javacc target="${VeraParser.jj}" javacchome="${env.JAVACC_HOME}" />
+        <delete>
+            <fileset dir="${src}/com/newisys/parser/vera">
+                <include name="ParseException.java" />
+                <include name="Token.java" />
+                <include name="TokenManager.java" />
+                <include name="TokenMgrError.java" />
+            </fileset>
+        </delete>
+    </target>
+
+    <property name="VeraPPParserConstants" location="${src}/com/newisys/parser/verapp/VeraPPParserConstants.java" />
+    <property name="VeraParserConstants" location="${src}/com/newisys/parser/vera/VeraParserConstants.java" />
+    <property name="TokenTranslationTable" location="${src}/com/newisys/parser/vera/TokenTranslationTable.java" />
+    <uptodate property="TokenTranslationTable.uptodate" targetfile="${TokenTranslationTable}">
+        <srcfiles file="${VeraPPParser.jj}" />
+        <srcfiles file="${VeraPPParserConstants}" />
+        <srcfiles file="${VeraParser.jj}" />
+        <srcfiles file="${VeraParserConstants}" />
+    </uptodate>
+
+    <target name="-token-xlat-table" depends="-javacc-vera" unless="TokenTranslationTable.uptodate">
+        <exec executable="perl">
+            <arg value="build-token-xlat-table.pl" />
+            <arg value="${VeraPPParserConstants}" />
+            <arg value="${VeraParserConstants}" />
+            <arg value="${TokenTranslationTable}" />
+            <arg value="TokenTranslationTable" />
+        </exec>
+    </target>
+
+    <target name="compile" depends="javacc">
+        <javac srcdir="${src}" destdir="${bin}" source="1.5" debug="true">
+            <classpath path="${jove.classes}" />
+            <classpath path="${langschema.classes}" />
+            <classpath path="${newisys-utils.classes}" />
+            <classpath path="../langsource/bin" />
+            <classpath path="../langschema-vera/bin" />
+        </javac>
+    </target>
+
+    <target name="docs">
+        <mkdir dir="${dist}/docs" />
+        <javadoc packagenames="com.newisys.*" sourcepath="${src}" destdir="${dist}/docs" source="1.5">
+            <link href="http://java.sun.com/j2se/1.5.0/docs/api/" />
+        </javadoc>
+    </target>
+
+    <target name="dist" depends="compile">
+        <mkdir dir="${dist}/lib" />
+        <jar jarfile="${dist}/lib/vera-parser.jar" basedir="${bin}" manifest="manifest.mf" />
+    </target>
+
+    <target name="clean">
+        <delete dir="${bin}" />
+        <delete dir="${dist}" />
+        <delete>
+            <fileset dir="${src}/com/newisys/parser/verapp">
+                <include name="CharStream.java" />
+                <include name="VeraPPParser.java" />
+                <include name="VeraPPParserConstants.java" />
+                <include name="VeraPPParserTokenManager.java" />
+            </fileset>
+            <fileset dir="${src}/com/newisys/parser/vera">
+                <include name="TokenTranslationTable.java" />
+                <include name="VeraParser.java" />
+                <include name="VeraParserConstants.java" />
+            </fileset>
+        </delete>
+    </target>
+</project>

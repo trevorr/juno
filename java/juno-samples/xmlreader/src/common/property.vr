@@ -1,0 +1,48 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include <vera_defines.vrh>
+
+function string getPropStr(string name, string def)
+{
+    if (get_plus_arg(CHECK, name)) {
+        bit[256*8-1:0] bit_str = get_plus_arg(STR, name);
+        getPropStr.bittostr(bit_str);
+    } else {
+        getPropStr = def;
+    }
+}
+
+function integer getPropInt(string name, integer def)
+{
+    if (get_plus_arg(CHECK, name)) {
+        getPropInt = get_plus_arg(NUM, name);
+    } else {
+        getPropInt = def;
+    }
+}
+
+function bit strToBool(string str)
+{
+    strToBool = (str == "true") || (str == "yes") ||
+        (str == "on") || (str == "1");
+}
+
+function bit getPropBool(string name, bit def)
+{
+    string value = getPropStr(name, def ? "true" : "false");
+    getPropBool = strToBool(value);
+}
+

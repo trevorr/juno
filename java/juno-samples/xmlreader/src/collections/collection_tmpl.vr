@@ -1,0 +1,249 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// Iterator
+////////////////////////////////////////////////////////////
+
+virtual class ITERATOR_CLASS
+extends CollectionsBase
+{
+    // all abstract
+    virtual function bit hasNext();
+    virtual function ELEMENT_TYPE next();
+    virtual task remove();
+}
+
+////////////////////////////////////////////////////////////
+// EmptyIterator
+////////////////////////////////////////////////////////////
+
+class EMPTY_ITERATOR_CLASS
+extends ITERATOR_CLASS
+{
+    virtual function bit hasNext();
+    virtual function ELEMENT_TYPE next();
+    virtual task remove();
+}
+
+function bit EMPTY_ITERATOR_CLASS::hasNext()
+{
+    hasNext = 0;
+}
+
+function ELEMENT_TYPE EMPTY_ITERATOR_CLASS::next()
+{
+    assert(0);
+}
+
+task EMPTY_ITERATOR_CLASS::remove()
+{
+    assert(0);
+}
+
+////////////////////////////////////////////////////////////
+// Collection
+////////////////////////////////////////////////////////////
+
+virtual class COLLECTION_CLASS
+extends CollectionsBase
+{
+    protected bit destroyOnRemove;
+
+    // Object
+    virtual function string dumpString();
+    virtual function bit equals(Object o); // abstract
+    virtual function integer hashCode(); // abstract
+    virtual task destroy();
+
+    // Collection
+    virtual task add(ELEMENT_TYPE o); // abstract
+    virtual task addAll(COLLECTION_CLASS c);
+    virtual task clear();
+    virtual function bit contains(ELEMENT_TYPE o);
+    virtual function bit containsAll(COLLECTION_CLASS c);
+    function bit isDestroyOnRemove();
+    virtual function bit isEmpty();
+    virtual function ITERATOR_CLASS iterator(); // abstract
+    virtual task remove(ELEMENT_TYPE o);
+    virtual task removeAll(COLLECTION_CLASS c);
+    virtual task retainAll(COLLECTION_CLASS c);
+    virtual task setDestroyOnRemove(bit value);
+    virtual function integer size();
+
+    task new();
+}
+
+function string COLLECTION_CLASS::dumpString()
+{
+    ITERATOR_CLASS i;
+    bit first;
+    string s;
+
+    i = iterator();
+    first = 1;
+    while (i.hasNext()) {
+        ELEMENT_TYPE io;
+
+        if (!first) s = { s, ", " };
+        io = i.next();
+        s = { s, DUMP_STRING(io) };
+        first = 0;
+    }
+
+    dumpString = { "[", s, "]" };
+}
+
+task COLLECTION_CLASS::destroy()
+{
+    clear();
+}
+
+task COLLECTION_CLASS::addAll(COLLECTION_CLASS c)
+{
+    ITERATOR_CLASS ci;
+
+    ci = c.iterator();
+    while (ci.hasNext()) {
+        ELEMENT_TYPE cio;
+
+        cio = ci.next();
+        add(cio);
+    }
+}
+
+task COLLECTION_CLASS::clear()
+{
+    ITERATOR_CLASS i;
+
+    i = iterator();
+    while (i.hasNext()) {
+        void = i.next();
+        i.remove();
+    }
+}
+
+function bit COLLECTION_CLASS::contains(ELEMENT_TYPE o)
+{
+    ITERATOR_CLASS i;
+
+    i = iterator();
+    while (i.hasNext()) {
+        ELEMENT_TYPE io;
+
+        io = i.next();
+        if (EQUALS(o, io)) {
+            contains = 1;
+            return;
+        }
+    }
+
+    contains = 0;
+}
+
+function bit COLLECTION_CLASS::containsAll(COLLECTION_CLASS c)
+{
+    ITERATOR_CLASS ci;
+
+    ci = c.iterator();
+    while (ci.hasNext()) {
+        ELEMENT_TYPE cio;
+
+        cio = ci.next();
+        if (!contains(cio)) {
+            containsAll = 0;
+            return;
+        }
+    }
+
+    containsAll = 1;
+}
+
+function bit COLLECTION_CLASS::isDestroyOnRemove()
+{
+    isDestroyOnRemove = destroyOnRemove;
+}
+
+function bit COLLECTION_CLASS::isEmpty()
+{
+    isEmpty = (size() == 0);
+}
+
+task COLLECTION_CLASS::remove(ELEMENT_TYPE o)
+{
+    ITERATOR_CLASS i;
+
+    i = iterator();
+    while (i.hasNext()) {
+        ELEMENT_TYPE io;
+
+        io = i.next();
+        if (EQUALS(o, io)) {
+            i.remove();
+            break;
+        }
+    }
+}
+
+task COLLECTION_CLASS::removeAll(COLLECTION_CLASS c)
+{
+    ITERATOR_CLASS ci;
+
+    ci = c.iterator();
+    while (ci.hasNext()) {
+        ELEMENT_TYPE cio;
+
+        cio = ci.next();
+        remove(cio);
+    }
+}
+
+task COLLECTION_CLASS::retainAll(COLLECTION_CLASS c)
+{
+    ITERATOR_CLASS i;
+
+    i = iterator();
+    while (i.hasNext()) {
+        ELEMENT_TYPE io;
+
+        io = i.next();
+        if (!c.contains(io)) {
+            i.remove();
+        }
+    }
+}
+
+task COLLECTION_CLASS::setDestroyOnRemove(bit value)
+{
+    destroyOnRemove = value;
+}
+
+function integer COLLECTION_CLASS::size()
+{
+    ITERATOR_CLASS i;
+
+    size = 0;
+    i = iterator();
+    while (i.hasNext()) {
+        ++size;
+        void = i.next();
+    }
+}
+
+task COLLECTION_CLASS::new()
+{
+    destroyOnRemove = 0;
+}
+

@@ -1,0 +1,191 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// ListIterator
+////////////////////////////////////////////////////////////
+
+virtual class LIST_ITERATOR_CLASS
+extends ITERATOR_CLASS
+{
+    // all abstract
+    virtual task add(ELEMENT_TYPE o);
+    virtual function bit hasPrevious();
+    virtual function integer nextIndex();
+    virtual function ELEMENT_TYPE previous();
+    virtual function integer previousIndex();
+    virtual task set(ELEMENT_TYPE o);
+}
+
+////////////////////////////////////////////////////////////
+// List
+////////////////////////////////////////////////////////////
+
+virtual class LIST_CLASS
+extends COLLECTION_CLASS
+{
+    // Object
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+
+    // Collection
+    virtual function ITERATOR_CLASS iterator();
+
+    // List
+    virtual task addAt(integer index, ELEMENT_TYPE o); // abstract
+    virtual task addAllAt(integer index, COLLECTION_CLASS c);
+    virtual task addFirst(ELEMENT_TYPE o);
+    virtual task addLast(ELEMENT_TYPE o);
+    virtual function ELEMENT_TYPE get(integer index); // abstract
+    virtual function ELEMENT_TYPE getFirst();
+    virtual function ELEMENT_TYPE getLast();
+    virtual function integer indexOf(ELEMENT_TYPE o);
+    virtual function integer lastIndexOf(ELEMENT_TYPE o);
+    virtual function LIST_ITERATOR_CLASS listIterator();
+    virtual function LIST_ITERATOR_CLASS listIteratorAt(integer index); // abstract
+    virtual task removeAt(integer index); // abstract
+    virtual task set(integer index, ELEMENT_TYPE o); // abstract
+}
+
+function bit LIST_CLASS::equals(Object o)
+{
+    Object thisObject;
+    LIST_CLASS otherList;
+    ITERATOR_CLASS i1, i2;
+
+    thisObject = this;
+    if (o == thisObject) {
+        equals = 1;
+        return;
+    }
+    if (!cast_assign(otherList, o, CHECK)) {
+        equals = 0;
+        return;
+    }
+
+    i1 = iterator();
+    i2 = otherList.iterator();
+    while (i1.hasNext() && i2.hasNext()) {
+        ELEMENT_TYPE i1o, i2o;
+
+        i1o = i1.next();
+        i2o = i2.next();
+        if (!EQUALS(i1o, i2o)) {
+            equals = 0;
+            return;
+        }
+    }
+
+    equals = !i1.hasNext() && !i2.hasNext();
+}
+
+function integer LIST_CLASS::hashCode()
+{
+    ITERATOR_CLASS i;
+    integer h;
+
+    i = iterator();
+    h = 1;
+    while (i.hasNext()) {
+        ELEMENT_TYPE io;
+
+        io = i.next();
+        h = (h * 31) + HASH_CODE(io);
+    }
+
+    hashCode = h;
+}
+
+task LIST_CLASS::addAllAt(integer index, COLLECTION_CLASS c)
+{
+    LIST_ITERATOR_CLASS li;
+    ITERATOR_CLASS ci;
+
+    li = listIteratorAt(index);
+    ci = c.iterator();
+    while (ci.hasNext()) {
+        ELEMENT_TYPE cio;
+
+        cio = ci.next();
+        li.add(cio);
+    }
+}
+
+task LIST_CLASS::addFirst(ELEMENT_TYPE o)
+{
+    addAt(0, o);
+}
+
+task LIST_CLASS::addLast(ELEMENT_TYPE o)
+{
+    add(o);
+}
+
+function ELEMENT_TYPE LIST_CLASS::getFirst()
+{
+    getFirst = get(0);
+}
+
+function ELEMENT_TYPE LIST_CLASS::getLast()
+{
+    getLast = get(size() - 1);
+}
+
+function integer LIST_CLASS::indexOf(ELEMENT_TYPE o)
+{
+    LIST_ITERATOR_CLASS li;
+
+    li = listIteratorAt(0);
+    while (li.hasNext()) {
+        ELEMENT_TYPE lio;
+
+        lio = li.next();
+        if (EQUALS(o, lio)) {
+            indexOf = li.previousIndex();
+            return;
+        }
+    }
+
+    indexOf = -1;
+}
+
+function ITERATOR_CLASS LIST_CLASS::iterator()
+{
+    iterator = listIteratorAt(0);
+}
+
+function integer LIST_CLASS::lastIndexOf(ELEMENT_TYPE o)
+{
+    LIST_ITERATOR_CLASS li;
+
+    li = listIteratorAt(size());
+    while (li.hasPrevious()) {
+        ELEMENT_TYPE lio;
+
+        lio = li.previous();
+        if (EQUALS(o, lio)) {
+            lastIndexOf = li.nextIndex();
+            return;
+        }
+    }
+
+    lastIndexOf = -1;
+}
+
+function LIST_ITERATOR_CLASS LIST_CLASS::listIterator()
+{
+    listIterator = listIteratorAt(0);
+}
+

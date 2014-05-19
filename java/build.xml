@@ -1,0 +1,74 @@
+<project name="juno" default="compile" basedir=".">
+    <property environment="env" />
+    <property name="junohome" location="${env.JUNO_HOME}" />
+    <property name="build.sysclasspath" value="last" />
+
+    <target name="init">
+        <echo>JUNO_HOME is ${env.JUNO_HOME}</echo>
+        <echo>JOVE_HOME is ${env.JOVE_HOME}</echo>
+        <tstamp />
+    </target>
+
+    <!-- check that jove-defs.xml exists in the Jove dist -->
+    <fail message="jove-defs.xml could not be imported. Is JOVE_HOME set correctly?" >
+        <condition>
+            <not>
+                <or>
+                    <available type="file" file="${env.JOVE_HOME}/jove-defs.xml" />
+                    <available type="file" file="${env.JOVE_HOME}/java/jove-defs.xml" />
+                </or>
+            </not>
+        </condition>
+    </fail>
+
+    <!-- import both locations (for src and bin dists) optionally as at least one will exist -->
+    <import file="${env.JOVE_HOME}/jove-defs.xml" optional="true" />
+    <import file="${env.JOVE_HOME}/java/jove-defs.xml" optional="true" />
+
+    <target name="compile" depends="juno" description="Builds Juno" />
+
+    <target name="juno" depends="init, langschema-vera, langsource, juno-runtime, make-parser, vera-parser, vlogdef">
+        <echo message="Compiling juno" />
+        <ant dir="${junohome}/java/juno" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="juno-runtime" depends="init" >
+        <echo message="Compiling juno-runtime" />
+        <ant dir="${junohome}/java/juno-runtime" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="langschema-vera" depends="init, juno-runtime">
+        <echo message="Compiling langschema-vera" />
+        <ant dir="${junohome}/java/langschema-vera" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="langsource" depends="init">
+        <echo message="Compiling langsource" />
+        <ant dir="${junohome}/java/langsource" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="make-parser" depends="init">
+        <echo message="Compiling make-parser" />
+        <ant dir="${junohome}/java/make-parser" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="vera-parser" depends="init, langsource, langschema-vera">
+        <echo message="Compiling vera-parser" />
+        <ant dir="${junohome}/java/vera-parser" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="vlogdef" depends="init, langschema-vera, langsource, vera-parser">
+        <echo message="Compiling vlogdef" />
+        <ant dir="${junohome}/java/vlogdef" target="compile" inheritAll="true" />
+    </target>
+
+    <target name="clean">
+        <ant dir="${junohome}/java/juno" target="clean" inheritAll="true" />
+        <ant dir="${junohome}/java/juno-runtime" target="clean" inheritAll="true" />
+        <ant dir="${junohome}/java/langschema-vera" target="clean" inheritAll="true" />
+        <ant dir="${junohome}/java/langsource" target="clean" inheritAll="true" />
+        <ant dir="${junohome}/java/make-parser" target="clean" inheritAll="true" />
+        <ant dir="${junohome}/java/vera-parser" target="clean" inheritAll="true" />
+        <ant dir="${junohome}/java/vlogdef" target="clean" inheritAll="true" />
+    </target>
+</project>

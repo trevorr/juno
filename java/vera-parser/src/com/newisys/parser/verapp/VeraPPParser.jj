@@ -1,0 +1,1067 @@
+/*
+ * JavaCC (TM) parser definition for the OpenVera (TM) language
+ * Copyright (C) 2003 Trevor A. Robinson
+ * JavaCC is a trademark or registered trademark of Sun Microsystems, Inc. in
+ * the U.S. or other countries.
+ * VERA and OpenVera are trademarks or registered trademarks of Synopsys, Inc.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+options {
+    STATIC = false;
+    USER_CHAR_STREAM = true;
+    COMMON_TOKEN_ACTION = true;
+}
+
+PARSER_BEGIN(VeraPPParser)
+
+package com.newisys.parser.verapp;
+
+import java.io.*;
+import java.util.*;
+
+import com.newisys.parser.util.*;
+
+/**
+ * JavaCC parser for the OpenVera (TM) preprocessor.
+ *
+ * Unimplemented features:
+ * #if and #elif with non-integer expressions,
+ * checking for infinite recursion in macro expansion
+ * 
+ * @author Trevor Robinson
+ */
+public class VeraPPParser
+{
+    private String filename;
+    private VeraPPCallbacks handler;
+    private boolean trackMacroRefs = true;
+
+    public VeraPPParser(InputStream stream, VeraPPCallbacks handler)
+    {
+        this(new VeraPPCharStream(stream, 1, 1));
+        this.handler = handler;
+    }
+
+    public VeraPPParser(Reader stream, VeraPPCallbacks handler)
+    {
+        this(new VeraPPCharStream(stream, 1, 1));
+        this.handler = handler;
+    }
+
+    public VeraPPParser(File file, VeraPPCallbacks handler)
+        throws FileNotFoundException
+    {
+        this(new FileReader(file), handler);
+        this.filename = file.getPath();
+    }
+
+    public VeraPPParser(String filename, VeraPPCallbacks handler)
+        throws FileNotFoundException
+    {
+        this(new File(filename), handler);
+    }
+
+    public String getFilename()
+    {
+        return filename;
+    }
+
+    public void setFilename(String _filename)
+    {
+        filename = _filename;
+    }
+
+    public int getCurrentLine()
+    {
+        Token t = getToken(0);
+        return t != null ? t.beginLine : 0;
+    }
+
+    public boolean isTrackMacroRefs()
+    {
+        return trackMacroRefs;
+    }
+
+    public void setTrackMacroRefs(boolean trackMacroRefs)
+    {
+        this.trackMacroRefs = trackMacroRefs;
+    }
+
+    public void pushInput(String s, MacroRef macroRef)
+    {
+        ((VeraPPCharStream) token_source.input_stream).insert(s, macroRef);
+    }
+
+    public void doExpansion(
+        VeraPPMacro macro,
+        PreprocessedToken t)
+    {
+        String expansion = macro.expand();
+        VeraPPSimpleMacroRef macroRef = null;
+        if (trackMacroRefs) {
+            macroRef = new VeraPPSimpleMacroRef(macro, t.expandedFrom);
+        }
+        pushInput(expansion, macroRef);
+    }
+
+    public void doExpansion(
+        VeraPPFunctionMacro macro,
+        List argList,
+        PreprocessedToken t1,
+        PreprocessedToken t2)
+    {
+        VeraPPFunctionMacroRef macroRef = null;
+        if (trackMacroRefs) {
+            macroRef = new VeraPPFunctionMacroRef(macro, argList, t1.expandedFrom);
+        }
+        macro.expand(argList, (VeraPPCharStream) token_source.input_stream, macroRef);
+    }
+
+    public static String escape(String str)
+    {
+        int len = str.length();
+        StringBuffer buf = new StringBuffer(len);
+        for (int i = 0; i < len; ++i)
+        {
+            char c = str.charAt(i);
+            switch (c)
+            {
+            case '"':
+                buf.append("\\\"");
+                break;
+            case '\\':
+                buf.append("\\\\");
+                break;
+            default:
+                buf.append(c);
+            }
+        }
+        return buf.toString();
+    }
+
+    public static String toStringLiteral(String str)
+    {
+        return '"' + escape(str) + '"';
+    }
+
+    private void checkComments(Token realToken)
+    {
+        if (realToken.specialToken != null) {
+            Token t = realToken.specialToken;
+            while (t.specialToken != null) t = t.specialToken;
+            while (t != null) {
+                handler.processComment(this, (PreprocessedToken) t);
+                t = t.next;
+            }
+        }
+    }
+
+    private void expandSourceMacro(Token t, boolean mustExist)
+        throws ParseException
+    {
+        if (!expandMacro(t, true)) {
+            if (!mustExist) {
+                handler.processToken(this, (PreprocessedToken) t);
+            } else {
+                handler.processError(this, "Undefined macro: " + getMacroName(t),
+                    (PreprocessedToken) t, (PreprocessedToken) t);
+            }
+        }
+    }
+
+    private void expandDirectiveMacro(Token t, Token prevToken, int[][] expectedTokens)
+        throws ParseException
+    {
+        if (!expandMacro(t, false)) {
+            throw new ParseException(prevToken, expectedTokens, tokenImage);
+        }
+    }
+
+    // built-in macros have their own (private) interface, since they rely on
+    // arbitrary parser state, and therefore do not have their references
+    // tracked
+    private interface BuiltinMacro
+    {
+        String expand(VeraPPParser parser, Token t);
+    }
+
+    private static final HashMap builtinMacros;
+
+    static
+    {
+        builtinMacros = new HashMap();
+        builtinMacros.put("__FILE__", new BuiltinMacro()
+        {
+            public String expand(VeraPPParser parser, Token t)
+            {
+                return toStringLiteral(parser.getFilename());
+            }
+        });
+        builtinMacros.put("__LINE__", new BuiltinMacro()
+        {
+            public String expand(VeraPPParser parser, Token t)
+            {
+                return String.valueOf(t.beginLine);
+            }
+        });
+    }
+
+    private boolean expandMacro(Token t, boolean useHandler)
+        throws ParseException
+    {
+        String macroName = getMacroName(t);
+
+        VeraPPMacro macro = handler.lookupMacro(this, macroName);
+        if (macro != null) {
+            PreprocessedToken pt = (PreprocessedToken) t;
+            if (macro instanceof VeraPPFunctionMacro) {
+                VeraPPFunctionMacro funcMacro = (VeraPPFunctionMacro) macro;
+                // semantic lookahead
+                int la = 1;
+                Token t1 = getToken(la);
+                // ignore intervening whitespace, including EOL
+                while (t1.kind == WS || t1.kind == EOL) {
+                    t1 = getToken(++la);
+                }
+                if (t1.kind == LPAREN) {
+                    // function macro with arguments
+                    List argValueList = macro_args(funcMacro);
+                    if (useHandler) {
+                        handler.processMacroReference(this, funcMacro, argValueList,
+                            pt, (PreprocessedToken) getToken(0));
+                    } else {
+                        doExpansion(funcMacro, argValueList,
+                            pt, (PreprocessedToken) getToken(0));
+                    }
+                } else {
+                    // function macro without arguments; treat as non-macro
+                    return false;
+                }
+            } else {
+                // object macro
+                if (useHandler) {
+                    handler.processMacroReference(this, macro, pt);
+                } else {
+                    doExpansion(macro, pt);
+                }
+            }
+            return true;
+        }
+
+        BuiltinMacro builtinMacro = (BuiltinMacro) builtinMacros.get(macroName);
+        if (builtinMacro != null) {
+            pushInput(builtinMacro.expand(this, t), null);
+            return true;
+        }
+
+        return false;
+    }
+
+    private String getMacroName(Token t)
+    {
+        if (t.kind == MACRO_REF) {
+            int len = t.image.length();
+            int pos = 1;
+            while (pos < len && Character.isWhitespace(t.image.charAt(pos))) ++pos;
+            return t.image.substring(pos);
+        } else {
+            return t.image;
+        }
+    }
+
+    private IncludeLocation getLocation(Token t)
+    {
+        return new IncludeLocation(filename, t.beginLine, handler.getIncludedFrom());
+    }
+}
+
+PARSER_END(VeraPPParser)
+
+TOKEN_MGR_DECLS :
+{
+    private Stack stateStack = new Stack();
+
+    private void pushState(int newState)
+    {
+        stateStack.push(new Integer(curLexState));
+        SwitchTo(newState);
+    }
+
+    private void popState()
+    {
+        int newState = ((Integer)stateStack.pop()).intValue();
+        SwitchTo(newState);
+    }
+
+    private void notFirstChar()
+    {
+        if (curLexState == DEFAULT) {
+            SwitchTo(NOT_FIRST_CHAR);
+        }
+    }
+
+    private void CommonTokenAction(Token t)
+    {
+        VeraPPCharStream stream = (VeraPPCharStream) input_stream;
+        MacroRef beginMacroRef = (MacroRef) stream.getBeginMarker();
+        MacroRef endMacroRef = (MacroRef) stream.getEndMarker();
+        MacroRef macroRef = MacroRefUtil.getCommonMacroRef(beginMacroRef, endMacroRef);
+        if (macroRef != null) {
+            PreprocessedToken pt = (PreprocessedToken) t;
+            pt.expandedFrom = macroRef;
+        }
+    }
+}
+
+/*
+  Lexical states:
+
+  DEFAULT           nothing but whitespace since start of line
+  NOT_FIRST_CHAR    token other than whitespace or '#' since start of line
+  INCLUDE_STATE     tokens for #include
+  DEFINE_STATE      tokens for #define
+  IFDEF_STATE       tokens for #ifdef, #ifndef, #undef
+  IF_STATE          tokens for #if, #elif
+  PRAGMA_STATE      tokens for #pragma
+  LINE_STATE        tokens for #line
+  OTHER_STATE       ignore trailing characters after #else and #endif
+*/
+
+/* WHITE SPACE */
+
+<DEFAULT,NOT_FIRST_CHAR,DEFINE_STATE>
+TOKEN :
+{
+    < #_WS: " " | "\t" | "\f" >
+|
+    < WS: (<_WS>)+ >
+}
+
+<INCLUDE_STATE,IFDEF_STATE,IF_STATE,LINE_STATE,OTHER_STATE>
+SKIP :
+{
+    < SKIPPED_WS: (<_WS>)+ >
+}
+
+<DEFAULT,NOT_FIRST_CHAR,INCLUDE_STATE,DEFINE_STATE,IFDEF_STATE,IF_STATE,PRAGMA_STATE,LINE_STATE,OTHER_STATE>
+SKIP :
+{
+    < #_EOL: "\n" | "\r" | "\r\n" >
+|
+    < CONT: "\\" (<_WS>)* <_EOL> >
+}
+
+<DEFAULT,NOT_FIRST_CHAR,INCLUDE_STATE,DEFINE_STATE,IFDEF_STATE,IF_STATE,LINE_STATE,OTHER_STATE>
+TOKEN:
+{
+    < EOL: <_EOL> > : DEFAULT
+}
+
+/* COMMENTS */
+
+<DEFAULT,NOT_FIRST_CHAR,INCLUDE_STATE,DEFINE_STATE,IFDEF_STATE,IF_STATE,PRAGMA_STATE,LINE_STATE,OTHER_STATE>
+MORE :
+{
+    "//" { pushState(IN_SINGLE_LINE_COMMENT); }
+|
+    "/*" { pushState(IN_MULTI_LINE_COMMENT); }
+}
+
+<IN_SINGLE_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+    < SINGLE_LINE_COMMENT: <_EOL> > { input_stream.backup(1); popState(); }
+}
+
+<IN_MULTI_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+    < MULTI_LINE_COMMENT: "*/" > { popState(); }
+}
+
+<IN_SINGLE_LINE_COMMENT,IN_MULTI_LINE_COMMENT>
+MORE :
+{
+    < ~[] >
+}
+
+/* RESERVED WORDS */
+
+<DEFAULT,NOT_FIRST_CHAR>
+TOKEN :
+{
+    < ALL: "all" > : NOT_FIRST_CHAR
+|   < ANY: "any" > : NOT_FIRST_CHAR
+|   < ASSOC_SIZE: "assoc_size" > : NOT_FIRST_CHAR
+|   < ASYNC: "async" > : NOT_FIRST_CHAR
+|   < BAD_STATE: "bad_state" > : NOT_FIRST_CHAR
+|   < BAD_TRANS: "bad_trans" > : NOT_FIRST_CHAR
+|   < BEGIN: "begin" > : NOT_FIRST_CHAR
+|   < BIG_ENDIAN: "big_endian" > : NOT_FIRST_CHAR
+|   < BIND: "bind" > : NOT_FIRST_CHAR
+|   < BIND_VAR: "bind_var" > : NOT_FIRST_CHAR
+|   < BIT: "bit" > : NOT_FIRST_CHAR
+|   < BIT_NORMAL: "bit_normal" > : NOT_FIRST_CHAR
+|   < BIT_REVERSE: "bit_reverse" > : NOT_FIRST_CHAR
+|   < BREAK: "break" > : NOT_FIRST_CHAR
+|   < BREAKPOINT: "breakpoint" > : NOT_FIRST_CHAR
+|   < CASE: "case" > : NOT_FIRST_CHAR
+|   < CASEX: "casex" > : NOT_FIRST_CHAR
+|   < CASEZ: "casez" > : NOT_FIRST_CHAR
+|   < CLASS: "class" > : NOT_FIRST_CHAR
+|   < CLOCK: "CLOCK" > : NOT_FIRST_CHAR
+|   < CONSTRAINT: "constraint" > : NOT_FIRST_CHAR
+|   < CONTINUE: "continue" > : NOT_FIRST_CHAR
+|   < COVERAGE: "coverage" > : NOT_FIRST_CHAR
+|   < COVERAGE_BLOCK: "coverage_block" > : NOT_FIRST_CHAR
+|   < COVERAGE_DEF: "coverage_def" > : NOT_FIRST_CHAR
+|   < COVERAGE_DEPTH: "coverage_depth" > : NOT_FIRST_CHAR
+|   < COVERAGE_GOAL: "coverage_goal" > : NOT_FIRST_CHAR
+|   < COVERAGE_OPTION: "coverage_option" > : NOT_FIRST_CHAR
+|   < COVERAGE_VAL: "coverage_val" > : NOT_FIRST_CHAR
+|   < _DEFAULT: "default" > : NOT_FIRST_CHAR
+|   < DEPTH: "depth" > : NOT_FIRST_CHAR
+|   < DIST: "dist" > : NOT_FIRST_CHAR
+|   < DYNAMIC_SIZE: "dynamic_size" > : NOT_FIRST_CHAR
+|   < ELSE: "else" > : NOT_FIRST_CHAR
+|   < END: "end" > : NOT_FIRST_CHAR
+|   < ENUM: "enum" > : NOT_FIRST_CHAR
+|   < EVENT: "event" > : NOT_FIRST_CHAR
+|   < EXHAUSTIVE: "exhaustive" > : NOT_FIRST_CHAR
+|   < EXPORT: "export" > : NOT_FIRST_CHAR
+|   < EXTENDS: "extends" > : NOT_FIRST_CHAR
+|   < EXTERN: "extern" > : NOT_FIRST_CHAR
+|   < FOR: "for" > : NOT_FIRST_CHAR
+|   < FORK: "fork" > : NOT_FIRST_CHAR
+|   < FUNCTION: "function" > : NOT_FIRST_CHAR
+|   < HDL_NODE: "hdl_node" > : NOT_FIRST_CHAR
+|   < HDL_TASK: "hdl_task" > : NOT_FIRST_CHAR
+|   < IF: "if" > : NOT_FIRST_CHAR
+|   < ILLEGAL_SELF_TRANSITION: "illegal_self_transition" > : NOT_FIRST_CHAR
+|   < ILLEGAL_STATE: "illegal_state" > : NOT_FIRST_CHAR
+|   < ILLEGAL_TRANSITION: "illegal_transition" > : NOT_FIRST_CHAR
+|   < IN: "in" > : NOT_FIRST_CHAR
+|   < INOUT: "inout" > : NOT_FIRST_CHAR
+|   < INPUT: "input" > : NOT_FIRST_CHAR
+|   < INTEGER: "integer" > : NOT_FIRST_CHAR
+|   < INTERFACE: "interface" > : NOT_FIRST_CHAR
+|   < JOIN: "join" > : NOT_FIRST_CHAR
+|   < LITTLE_ENDIAN: "little_endian" > : NOT_FIRST_CHAR
+|   < LOCAL: "local" > : NOT_FIRST_CHAR
+|   < M_BAD_STATE: "m_bad_state" > : NOT_FIRST_CHAR
+|   < M_BAD_TRANS: "m_bad_trans" > : NOT_FIRST_CHAR
+|   < M_STATE: "m_state" > : NOT_FIRST_CHAR
+|   < M_TRANS: "m_trans" > : NOT_FIRST_CHAR
+|   < NEGEDGE: "negedge" > : NOT_FIRST_CHAR
+|   < NEW: "new" > : NOT_FIRST_CHAR
+|   < NEWCOV: "newcov" > : NOT_FIRST_CHAR
+|   < NONE: "none" > : NOT_FIRST_CHAR
+|   < NON_RAND: "non_rand" > : NOT_FIRST_CHAR
+|   < NOT: "not" > : NOT_FIRST_CHAR
+|   < NULL: "null" > : NOT_FIRST_CHAR
+|   < OR: "or" > : NOT_FIRST_CHAR
+|   < ORDERED: "ordered" > : NOT_FIRST_CHAR
+|   < OUTPUT: "output" > : NOT_FIRST_CHAR
+|   < PACKED: "packed" > : NOT_FIRST_CHAR
+|   < PORT: "port" > : NOT_FIRST_CHAR
+|   < POSEDGE: "posedge" > : NOT_FIRST_CHAR
+|   < PROD: "prod" > : NOT_FIRST_CHAR
+|   < PRODGET: "prodget" > : NOT_FIRST_CHAR
+|   < PRODSET: "prodset" > : NOT_FIRST_CHAR
+|   < PROGRAM: "program" > : NOT_FIRST_CHAR
+|   < PROTECTED: "protected" > : NOT_FIRST_CHAR
+|   < PUBLIC: "public" > : NOT_FIRST_CHAR
+|   < RAND: "rand" > : NOT_FIRST_CHAR
+|   < RANDC: "randc" > : NOT_FIRST_CHAR
+|   < RANDCASE: "randcase" > : NOT_FIRST_CHAR
+|   < RANDSEQ: "randseq" > : NOT_FIRST_CHAR
+|   < REG: "reg" > : NOT_FIRST_CHAR
+|   < REPEAT: "repeat" > : NOT_FIRST_CHAR
+|   < RETURN: "return" > : NOT_FIRST_CHAR
+|   < SHADOW: "shadow" > : NOT_FIRST_CHAR
+|   < SOFT: "soft" > : NOT_FIRST_CHAR
+|   < STATE: "state" > : NOT_FIRST_CHAR
+|   < STATIC: "static" > : NOT_FIRST_CHAR
+|   < STRING: "string" > : NOT_FIRST_CHAR
+|   < SUPER: "super" > : NOT_FIRST_CHAR
+|   < TASK: "task" > : NOT_FIRST_CHAR
+|   < TERMINATE: "terminate" > : NOT_FIRST_CHAR
+|   < THIS: "this" > : NOT_FIRST_CHAR
+|   < TRANS: "trans" > : NOT_FIRST_CHAR
+|   < TYPEDEF: "typedef" > : NOT_FIRST_CHAR
+|   < UNPACKED: "unpacked" > : NOT_FIRST_CHAR
+|   < VAR: "var" > : NOT_FIRST_CHAR
+|   < VCA: "vca" > : NOT_FIRST_CHAR
+|   < VECTOR: "vector" > : NOT_FIRST_CHAR
+|   < VERILOG_NODE: "verilog_node" > : NOT_FIRST_CHAR
+|   < VERILOG_TASK: "verilog_task" > : NOT_FIRST_CHAR
+|   < VHDL_NODE: "vhdl_node" > : NOT_FIRST_CHAR
+|   < VHDL_TASK: "vhdl_task" > : NOT_FIRST_CHAR
+|   < VIRTUAL: "virtual" > : NOT_FIRST_CHAR
+|   < VOID: "void" > : NOT_FIRST_CHAR
+|   < WHILE: "while" > : NOT_FIRST_CHAR
+|   < WILDCARD: "wildcard" > : NOT_FIRST_CHAR
+|   < WITH: "with" > : NOT_FIRST_CHAR
+}
+
+<IF_STATE>
+TOKEN :
+{
+    < DEFINED: "defined" >
+}
+
+/* OPERATORS */
+
+// operators used in macro references
+<DEFAULT,NOT_FIRST_CHAR,INCLUDE_STATE,DEFINE_STATE,IF_STATE,LINE_STATE>
+TOKEN :
+{
+    < LPAREN: "(" > { notFirstChar(); }
+|   < RPAREN: ")" > { notFirstChar(); }
+|   < COMMA: "," > { notFirstChar(); }
+}
+
+// operators used in #if and #elif directives
+<DEFAULT,NOT_FIRST_CHAR,IF_STATE>
+TOKEN :
+{
+    < PLUS: "+" > { notFirstChar(); }
+|   < MINUS: "-" > { notFirstChar(); }
+|   < STAR: "*" > { notFirstChar(); }
+|   < SLASH: "/" > { notFirstChar(); }
+|   < MOD: "%" > { notFirstChar(); }
+|   < TILDE: "~" > { notFirstChar(); }
+|   < BIT_AND: "&" > { notFirstChar(); }
+|   < BIT_XOR: "^" > { notFirstChar(); }
+|   < BIT_OR: "|" > { notFirstChar(); }
+|   < LSHIFT: "<<" > { notFirstChar(); }
+|   < RSHIFT: ">>" > { notFirstChar(); }
+|   < LT: "<" > { notFirstChar(); }
+|   < LE: "<=" > { notFirstChar(); }
+|   < GT: ">" > { notFirstChar(); }
+|   < GE: ">=" > { notFirstChar(); }
+|   < EQ: "==" > { notFirstChar(); }
+|   < NE: "!=" > { notFirstChar(); }
+|   < BANG: "!" > { notFirstChar(); }
+|   < LOG_AND: "&&" > { notFirstChar(); }
+|   < LOG_OR: "||" > { notFirstChar(); }
+}
+
+// operators used outside of directives
+<DEFAULT,NOT_FIRST_CHAR>
+TOKEN :
+{
+    < POUND: "#" > : NOT_FIRST_CHAR
+|   < SCOPE: "::" > : NOT_FIRST_CHAR
+|   < LBRACE: "{" > : NOT_FIRST_CHAR
+|   < RBRACE: "}" > : NOT_FIRST_CHAR
+|   < LBRACKET: "[" > : NOT_FIRST_CHAR
+|   < RBRACKET: "]" > : NOT_FIRST_CHAR
+|   < DOT: "." > : NOT_FIRST_CHAR
+|   < APOS: "'" > : NOT_FIRST_CHAR
+|   < INCR: "++" > : NOT_FIRST_CHAR
+|   < DECR: "--" > : NOT_FIRST_CHAR
+|   < UNARY_NAND: "~&" > : NOT_FIRST_CHAR
+|   < UNARY_NOR: "~|" > : NOT_FIRST_CHAR
+|   < UNARY_XNOR: "~^" > : NOT_FIRST_CHAR
+|   < GT_LT: "><" > : NOT_FIRST_CHAR
+|   < CASE_EQ: "===" > : NOT_FIRST_CHAR
+|   < CASE_NE: "!==" > : NOT_FIRST_CHAR
+|   < WILD_EQ: "=?=" > : NOT_FIRST_CHAR
+|   < WILD_NE: "!?=" > : NOT_FIRST_CHAR
+|   < BIT_NAND: "&~" > : NOT_FIRST_CHAR
+|   < BIT_XNOR: "^~" > : NOT_FIRST_CHAR
+|   < BIT_NOR: "|~" > : NOT_FIRST_CHAR
+|   < HOOK: "?" > : NOT_FIRST_CHAR
+|   < COLON: ":" > : NOT_FIRST_CHAR
+|   < ASSIGN: "=" > : NOT_FIRST_CHAR
+|   < PLUS_ASSIGN: "+=" > : NOT_FIRST_CHAR
+|   < MINUS_ASSIGN: "-=" > : NOT_FIRST_CHAR
+|   < STAR_ASSIGN: "*=" > : NOT_FIRST_CHAR
+|   < SLASH_ASSIGN: "/=" > : NOT_FIRST_CHAR
+|   < MOD_ASSIGN: "%=" > : NOT_FIRST_CHAR
+|   < LSHIFT_ASSIGN: "<<=" > : NOT_FIRST_CHAR
+|   < RSHIFT_ASSIGN: ">>=" > : NOT_FIRST_CHAR
+|   < AND_ASSIGN: "&=" > : NOT_FIRST_CHAR
+|   < OR_ASSIGN: "|=" > : NOT_FIRST_CHAR
+|   < XOR_ASSIGN: "^=" > : NOT_FIRST_CHAR
+|   < NAND_ASSIGN: "~&=" > : NOT_FIRST_CHAR
+|   < NOR_ASSIGN: "~|=" > : NOT_FIRST_CHAR
+|   < XNOR_ASSIGN: "~^=" > : NOT_FIRST_CHAR
+|   < SEMICOLON: ";" > : NOT_FIRST_CHAR
+|   < DIST_EACH: ":=" > : NOT_FIRST_CHAR
+|   < DIST_ACROSS: ":/" > : NOT_FIRST_CHAR
+|   < IMPLICATION: "=>" > : NOT_FIRST_CHAR
+|   < AT: "@" > : NOT_FIRST_CHAR
+|   < ATAT: "@@" > : NOT_FIRST_CHAR
+|   < ATATAT: "@@@" > : NOT_FIRST_CHAR
+}
+
+/* IDENTIFIERS AND LITERALS */
+
+// NOTE: identifiers must be defined after reserved words,
+// since reserved words match the pattern for identifiers
+
+<DEFAULT,NOT_FIRST_CHAR,IF_STATE>
+TOKEN :
+{
+    < #BIN: ["0"-"1","x","X","z","Z","_"] >
+|
+    < #OCT: ["0"-"7","x","X","z","Z","_"] >
+|
+    < #DEC: ["0"-"9","_"] >
+|
+    < #HEX: ["0"-"9","a"-"f","A"-"F","x","X","z","Z","_"] >
+|
+    < #LETTER: ["a"-"z","A"-"Z","_"] >
+|
+    < #_IDENT: <LETTER> (<LETTER>|<DEC>)* >
+|
+    < #_STRING_LITERAL:
+        "\""
+        (
+            ( ~["\"","\\","\n","\r"] )
+        |
+            ( "\\" (~[] | "\r\n") )
+        )*
+        "\""
+    >
+|
+    < #_INTEGER_LITERAL: (<DEC>)+ >
+|
+    < #_NUMBER_LITERAL: (<INTEGER_LITERAL>)? "'"
+        (
+            ["b","B"] (<BIN>)+
+        |   ["o","O"] (<OCT>)+
+        |   ["d","D"] (<DEC>)+
+        |   ["h","H"] (<HEX>)+
+        )
+    >
+|
+    < IDENT: <_IDENT> > : NOT_FIRST_CHAR
+|
+    < EXT_IDENT: "$" <_IDENT> > : NOT_FIRST_CHAR
+|
+    < STRING_LITERAL: <_STRING_LITERAL> > : NOT_FIRST_CHAR
+|
+    < INTEGER_LITERAL: <_INTEGER_LITERAL> > : NOT_FIRST_CHAR
+|
+    < NUMBER_LITERAL: <_NUMBER_LITERAL> > : NOT_FIRST_CHAR
+}
+
+/* SOURCE PRAGMAS */
+
+// based on undocumented pragma syntax that appears in ListMacros.vrh
+<DEFAULT,NOT_FIRST_CHAR>
+SPECIAL_TOKEN :
+{
+    < SOURCE_PRAGMA: "%pragma" (~[";"])* ";" >
+}
+
+/* DIRECTIVES */
+
+<DEFAULT>
+TOKEN :
+{
+    < #_DS: ( "#" | "`" ) ( <_WS> | <CONT> )* >
+|
+    < INCLUDE_DIRECTIVE: <_DS> "include" > : INCLUDE_STATE
+|
+    < DEFINE_DIRECTIVE: <_DS> "define" > : DEFINE_STATE
+|
+    < UNDEF_DIRECTIVE: <_DS> "undef" > : IFDEF_STATE
+|
+    < IF_DIRECTIVE: <_DS> "if" > : IF_STATE
+|
+    < IFDEF_DIRECTIVE: <_DS> "ifdef" > : IFDEF_STATE
+|
+    < IFNDEF_DIRECTIVE: <_DS> "ifndef" > : IFDEF_STATE
+|
+    < ELSE_DIRECTIVE: <_DS> "else" > : OTHER_STATE
+|
+    < ELIF_DIRECTIVE: <_DS> "elif" > : IF_STATE
+|
+    < ENDIF_DIRECTIVE: <_DS> "endif" > : OTHER_STATE
+|
+    < PRAGMA_DIRECTIVE: <_DS> "pragma" > : PRAGMA_STATE
+|
+    < LINE_DIRECTIVE: <_DS> "line" > : LINE_STATE
+}
+
+<DEFAULT,NOT_FIRST_CHAR,INCLUDE_STATE,DEFINE_STATE,IFDEF_STATE,LINE_STATE>
+TOKEN :
+{
+    < #_MACRO_LETTER: ["a"-"z","A"-"Z","_","$"] >
+|
+    < MACRO_IDENT: <_MACRO_LETTER> (<_MACRO_LETTER>|<DEC>)* >
+}
+
+<DEFAULT,NOT_FIRST_CHAR,INCLUDE_STATE,DEFINE_STATE,LINE_STATE>
+TOKEN :
+{
+    < MACRO_REF: "`" (<_WS>)* <MACRO_IDENT> >
+}
+
+<INCLUDE_STATE>
+TOKEN :
+{
+    < INCLUDE_SYSPATH: "<" (~[">","\n","\r"])* ">" >
+|
+    < INCLUDE_USERPATH: <_STRING_LITERAL> >
+}
+
+<DEFINE_STATE>
+TOKEN :
+{
+    < DEFINE_NUMBER: (<_INTEGER_LITERAL> | <_NUMBER_LITERAL>) >
+|
+    < DEFINE_STRING: <_STRING_LITERAL> >
+|
+    < DEFINE_OTHER: ~[] >
+}
+
+<LINE_STATE>
+TOKEN :
+{
+    < LINE_PATH: <_STRING_LITERAL> >
+|
+    < LINE_NUMBER: (["0"-"9"])+ >
+}
+
+<PRAGMA_STATE>
+TOKEN :
+{
+    < PRAGMA_TEXT: <_EOL> > { input_stream.backup(1); SwitchTo(DEFAULT); }
+}
+
+<PRAGMA_STATE>
+MORE :
+{
+    < ~[] >
+}
+
+<OTHER_STATE>
+SKIP :
+{
+    < ~[] >
+}
+
+/* GRAMMAR */
+
+void file() :
+{
+    Token t;
+}
+{
+    (
+        LOOKAHEAD( { any_lookahead() } )
+        (
+            directive()
+        |
+            ( t=<IDENT> | t=<MACRO_IDENT> )
+            {
+                checkComments(t);
+                expandSourceMacro(t, false);
+            }
+        |
+            t=<MACRO_REF>
+            {
+                checkComments(t);
+                expandSourceMacro(t, true);
+            }
+        |
+            t=<EOL>
+            {
+                checkComments(t);
+                handler.processEndOfLine(this, (PreprocessedToken) t);
+            }
+        |
+            t=any()
+            {
+                checkComments(t);
+                handler.processToken(this, (PreprocessedToken) t);
+            }
+        )
+    )*
+    t=<EOF>
+    {
+        checkComments(t);
+        handler.processEndOfFile(this, (PreprocessedToken) t);
+    }
+}
+
+JAVACODE
+boolean any_lookahead()
+{
+    Token t = getToken(1);
+    return t.kind != EOF;
+}
+
+JAVACODE
+Token any()
+{
+    return getNextToken();
+}
+
+List macro_args(VeraPPFunctionMacro macro) :
+{
+    List argList = new LinkedList();
+    StringBuffer buf;
+}
+{
+    ( <WS> | <EOL> )*
+    <LPAREN>
+    [
+        LOOKAHEAD( { macro_arg_lookahead() } )
+        { buf = new StringBuffer(); }
+        macro_arg(buf)
+        { argList.add(buf.toString()); }
+        (
+            <COMMA>
+            { buf = new StringBuffer(); }
+            macro_arg(buf)
+            { argList.add(buf.toString()); }
+        )*
+    ]
+    <RPAREN>
+    { return argList; }
+}
+
+JAVACODE
+boolean macro_arg_lookahead()
+{
+    Token t = getToken(1);
+    return t.kind != EOF && t.kind != RPAREN;
+}
+
+JAVACODE
+void macro_arg(StringBuffer buf)
+{
+    top: while (true) {
+        Token t = getToken(1);
+        switch (t.kind) {
+            case EOF:
+            case RPAREN:
+            case COMMA:
+                break top;
+            case LPAREN:
+                paren_macro_arg(buf);
+                break;
+            default:
+                buf.append(t.image);
+                getNextToken();
+        }
+    }
+}
+
+void paren_macro_arg(StringBuffer buf) :
+{
+    Token t;
+}
+{
+    t=<LPAREN> { buf.append(t.image); }
+    (
+        LOOKAHEAD( { macro_arg_lookahead() } )
+        (
+            t=<COMMA> { buf.append(t.image); }
+        |
+            macro_arg(buf)
+        )
+    )*
+    t=<RPAREN> { buf.append(t.image); }
+}
+
+void directive() :
+{
+    Token t, pt, t1;
+    String path = null;
+}
+{
+    (
+        { boolean sysPath; }
+        t=<INCLUDE_DIRECTIVE> { t1 = t; }
+        (
+            { pt = t; }
+            ( t=<MACRO_IDENT> | t=<MACRO_REF> )
+            {
+                int[][] expectedTokens = { { INCLUDE_SYSPATH }, { INCLUDE_USERPATH } };
+                expandDirectiveMacro(t, pt, expectedTokens);
+            }
+        )*
+        (
+            t=<INCLUDE_SYSPATH>
+            { sysPath = true; }
+        |
+            t=<INCLUDE_USERPATH>
+            { sysPath = false; }
+        )
+
+        {
+            path = t.image.substring(1, t.image.length() - 1);
+
+            //System.err.println("*Include: " + path);
+
+            handler.processInclude(this, path, sysPath, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        {
+            String macroName;
+            VeraPPUserMacro macro;
+        }
+        t1=<DEFINE_DIRECTIVE> <WS> t=<MACRO_IDENT>
+        { macroName = t.image; }
+        (
+            LOOKAHEAD(1) // tell JavaCC to ignore ambiguity caused by '(' in macro body
+            <LPAREN>
+            {
+                VeraPPFunctionMacro funcMacro = new VeraPPFunctionMacro(
+                    macroName, getLocation(t));
+                macro = funcMacro;
+            }
+            [
+                [ <WS> ] t=<MACRO_IDENT> [ <WS> ]
+                { funcMacro.addArgumentName(t.image); }
+                (
+                    <COMMA> [ <WS> ] t=<MACRO_IDENT> [ <WS> ]
+                    { funcMacro.addArgumentName(t.image); }
+                )*
+            ]
+            t=<RPAREN>
+        |
+            { macro = new VeraPPObjectMacro(macroName, getLocation(t)); }
+        )
+        [
+            // ignore leading whitespace
+            LOOKAHEAD(1) <WS>
+        ]
+        (
+            ( t=<MACRO_IDENT> | t=<MACRO_REF> |
+              t=<DEFINE_NUMBER> | t=<DEFINE_STRING> |
+              t=<LPAREN> | t=<COMMA> | t=<RPAREN> |
+              t=<DEFINE_OTHER> | t=<WS> )
+            { macro.appendToken(t); }
+        )*
+
+        {
+            //System.err.println("*Define: " + macro);
+
+            handler.processDefine(this, macro, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t1=<UNDEF_DIRECTIVE> t=<MACRO_IDENT>
+
+        {
+            macroName = t.image;
+
+            //System.err.println("*Undef: " + macroName);
+
+            handler.processUndef(this, macroName, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t1=<IFDEF_DIRECTIVE> t=<MACRO_IDENT>
+
+        {
+            macroName = t.image;
+
+            //System.err.println("*Ifdef: " + macroName);
+
+            handler.processIfdef(this, macroName, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t1=<IFNDEF_DIRECTIVE> t=<MACRO_IDENT>
+
+        {
+            macroName = t.image;
+
+            //System.err.println("*Ifndef: " + macroName);
+
+            handler.processIfndef(this, macroName, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t1=<IF_DIRECTIVE> t=<INTEGER_LITERAL>
+
+        {
+            int value = Integer.parseInt(t.image);
+
+            //System.err.println("*If: " + value);
+
+            handler.processIf(this, value != 0, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t1=<ELIF_DIRECTIVE> t=<INTEGER_LITERAL>
+
+        {
+            value = Integer.parseInt(t.image);
+
+            //System.err.println("*Elif: " + value);
+
+            handler.processElif(this, value != 0, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t=<ELSE_DIRECTIVE>
+
+        {
+            //System.err.println("*Else");
+
+            handler.processElse(this, (PreprocessedToken) t);
+        }
+    |
+        t=<ENDIF_DIRECTIVE>
+
+        {
+            //System.err.println("*Endif");
+
+            handler.processEndif(this, (PreprocessedToken) t);
+        }
+    |
+        t1=<PRAGMA_DIRECTIVE> t=<PRAGMA_TEXT>
+
+        {
+            //System.err.println("*Pragma: " + t.image);
+
+            handler.processPragma(this, t.image, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    |
+        t=<LINE_DIRECTIVE> { t1 = t; }
+        (
+            { pt = t; }
+            ( t=<MACRO_IDENT> | t=<MACRO_REF> )
+            {
+                int[][] expectedTokens = { { LINE_NUMBER } };
+                expandDirectiveMacro(t, pt, expectedTokens);
+            }
+        )*
+        t=<LINE_NUMBER> { int lineNo = Integer.parseInt(t.image); }
+        (
+            { pt = t; }
+            ( t=<MACRO_IDENT> | t=<MACRO_REF> )
+            {
+                int[][] expectedTokens = { { LINE_PATH } };
+                expandDirectiveMacro(t, pt, expectedTokens);
+            }
+        )*
+        [ t=<LINE_PATH> { path = t.image; } ]
+
+        {
+            //System.err.println("*Line: " + lineNo);
+
+            handler.processLine(this, lineNo, path, (PreprocessedToken) t1, (PreprocessedToken) t);
+        }
+    )
+    t=<EOL>
+    {
+        checkComments(t);
+        handler.processEndOfLine(this, (PreprocessedToken) t);
+    }
+}

@@ -1,0 +1,568 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// HashMap
+////////////////////////////////////////////////////////////
+
+typedef class HASH_MAP_ENTRY_CLASS;
+typedef class HASH_MAP_ENTRY_SET_CLASS;
+typedef class HASH_MAP_KEY_SET_CLASS;
+typedef class HASH_MAP_VALUE_COLLECTION_CLASS;
+
+class HASH_MAP_CLASS
+extends MAP_CLASS
+{
+    // For local use only!
+    HASH_MAP_ENTRY_CLASS hashTable[];
+    integer tableSize;
+    integer count;
+    local integer threshold;
+
+    // Map
+    virtual task clear();
+    virtual function Set entrySet();
+    virtual function MAP_ENTRY_CLASS findKey(KEY_TYPE key);
+    virtual function KEY_SET_CLASS keySet();
+    virtual task put(KEY_TYPE key, VALUE_TYPE value);
+    virtual task remove(KEY_TYPE key);
+    virtual function integer size();
+    virtual function VALUE_COLLECTION_CLASS values();
+
+    // HashMap
+    task new(integer initialCapacity = 16);
+
+    local task resize(integer newTableSize);
+}
+
+task HASH_MAP_CLASS::clear()
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.clear()",
+        getObjectName()))
+
+    if (destroyKeyOnRemove || destroyValueOnRemove) {
+        integer i;
+
+        if (assoc_index(FIRST, hashTable, i)) {
+            while (1) {
+                HASH_MAP_ENTRY_CLASS victim = hashTable[i];
+                while (victim != null) {
+                    if (destroyKeyOnRemove) {
+                        victim.destroyKey();
+                    }
+                    if (destroyValueOnRemove) {
+                        victim.destroyValue();
+                    }
+                    victim = victim.nextEntry;
+                }
+                if (!assoc_index(NEXT, hashTable, i)) break;
+            }
+        }
+    }
+
+    assoc_index(DELETE, hashTable);
+    count = 0;
+}
+
+function Set HASH_MAP_CLASS::entrySet()
+{
+    HASH_MAP_ENTRY_SET_CLASS hashMapEntrySet = new(this);
+    entrySet = hashMapEntrySet;
+}
+
+function MAP_ENTRY_CLASS HASH_MAP_CLASS::findKey(KEY_TYPE key)
+{
+    integer hash, index;
+    HASH_MAP_ENTRY_CLASS entry;
+
+    hash = suppHash(KEY_HASH_CODE(key));
+    index = hash & (tableSize - 1);
+    entry = hashTable[index];
+    while (entry != null) {
+        if (hash == entry.hashCode && KEY_EQUALS(key, entry.key)) {
+            findKey = entry;
+            return;
+        }
+        entry = entry.nextEntry;
+    }
+
+    findKey = null;
+}
+
+function KEY_SET_CLASS HASH_MAP_CLASS::keySet()
+{
+    HASH_MAP_KEY_SET_CLASS hashMapKeySet = new(this);
+    keySet = hashMapKeySet;
+}
+
+task HASH_MAP_CLASS::put(KEY_TYPE key, VALUE_TYPE value)
+{
+    integer hash, index;
+    HASH_MAP_ENTRY_CLASS entry;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.put(%s, %s)",
+        getObjectName(), KEY_DUMP_STRING(key), VALUE_DUMP_STRING(value)))
+
+    hash = suppHash(KEY_HASH_CODE(key));
+    index = hash & (tableSize - 1);
+    entry = hashTable[index];
+    while (entry != null) {
+        if (hash == entry.hashCode && KEY_EQUALS(key, entry.key)) {
+            if (destroyValueOnRemove) {
+                VALUE_TYPE victim = entry.value;
+                VALUE_DESTROY(victim);
+            }
+            entry.value = value;
+            return;
+        }
+        entry = entry.nextEntry;
+    }
+
+    hashTable[index] = new(key, value, hash, hashTable[index]);
+    if (++count >= threshold) {
+        resize(tableSize * 2);
+    }
+}
+
+task HASH_MAP_CLASS::remove(KEY_TYPE key)
+{
+    integer hash, index;
+    HASH_MAP_ENTRY_CLASS prevEntry, entry;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.remove(%s)",
+        getObjectName(), KEY_DUMP_STRING(key)))
+
+    hash = suppHash(KEY_HASH_CODE(key));
+    index = hash & (tableSize - 1);
+    prevEntry = null;
+    entry = hashTable[index];
+    while (entry != null) {
+        HASH_MAP_ENTRY_CLASS nextEntry;
+
+        nextEntry = entry.nextEntry;
+
+        if (hash == entry.hashCode && KEY_EQUALS(key, entry.key)) {
+            --count;
+            if (destroyKeyOnRemove) {
+                entry.destroyKey();
+            }
+            if (destroyValueOnRemove) {
+                entry.destroyValue();
+            }
+
+            if (prevEntry == null) {
+                hashTable[index] = nextEntry;
+            }
+            else {
+                prevEntry.nextEntry = nextEntry;
+            }
+            return;
+        }
+
+        prevEntry = entry;
+        entry = nextEntry;
+    }
+}
+
+function integer HASH_MAP_CLASS::size()
+{
+    size = count;
+}
+
+function VALUE_COLLECTION_CLASS HASH_MAP_CLASS::values()
+{
+    HASH_MAP_VALUE_COLLECTION_CLASS hashMapValues = new(this);
+    values = hashMapValues;
+}
+
+task HASH_MAP_CLASS::new(integer initialCapacity = 16)
+{
+    integer size;
+
+    setClassName("HashMap");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new(%0d)",
+        getObjectName(), initialCapacity))
+
+    // table is initially empty
+    tableSize = 0;
+    count = 0;
+
+    // find power of 2 table size >= initial capacity
+    size = 1;
+    while (size < initialCapacity) {
+        size <<= 1;
+    }
+
+    // update table size and threshold
+    resize(size);
+}
+
+task HASH_MAP_CLASS::resize(integer newTableSize)
+{
+    integer index;
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.resize(%0d)",
+        getObjectName(), newTableSize))
+
+    // rebuild hash buckets
+    for (index = 0; index < tableSize; ++index) {
+        HASH_MAP_ENTRY_CLASS prevEntry, entry;
+
+        prevEntry = null;
+        entry = hashTable[index];
+        while (entry != null) {
+            HASH_MAP_ENTRY_CLASS nextEntry;
+            integer newIndex;
+
+            nextEntry = entry.nextEntry;
+
+            // move entry if index changed
+            newIndex = entry.hashCode & (newTableSize - 1);
+            if (newIndex != index) {
+
+                // remove entry from old list
+                if (prevEntry == null) {
+                    hashTable[index] = nextEntry;
+                }
+                else {
+                    prevEntry.nextEntry = nextEntry;
+                }
+
+                // add entry to new list
+                entry.nextEntry = hashTable[newIndex];
+                hashTable[newIndex] = entry;
+            }
+            else {
+                // previous entry only advances if index is unchanged
+                prevEntry = entry;
+            }
+
+            entry = nextEntry;
+        }
+    }
+
+    // set new table size
+    tableSize = newTableSize;
+
+    // resize at 75% load factor
+    threshold = tableSize * 3 / 4;
+}
+
+// supplemental hash function to improve hash distribution;
+// critical for power of 2 hash table size
+// see http://www.concentric.net/~Ttwang/tech/inthash.htm
+local function integer suppHash(integer hashCode)
+{
+    bit[31:0] uh = hashCode;
+
+    uh += ~(uh << 15);
+    uh ^=  (uh >> 10);
+    uh +=  (uh << 3);
+    uh ^=  (uh >> 6);
+    uh += ~(uh << 11);
+    uh ^=  (uh >> 16);
+
+    suppHash = uh;
+}
+
+////////////////////////////////////////////////////////////
+// HashMapEntry
+////////////////////////////////////////////////////////////
+
+class HASH_MAP_ENTRY_CLASS
+extends MAP_ENTRY_CLASS
+{
+    integer hashCode;
+    HASH_MAP_ENTRY_CLASS nextEntry;
+
+    task new(KEY_TYPE _key, VALUE_TYPE _value, integer _hashCode,
+        HASH_MAP_ENTRY_CLASS _nextEntry)
+    {
+        super.new(_key, _value);
+
+        hashCode = _hashCode;
+        nextEntry = _nextEntry;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// HashMapEntrySet
+////////////////////////////////////////////////////////////
+
+typedef class HASH_MAP_ENTRY_ITERATOR_CLASS;
+
+local class HASH_MAP_ENTRY_SET_CLASS
+extends Set
+{
+    local HASH_MAP_CLASS hashMap;
+
+    // Collection
+    virtual task add(Object o);
+    virtual task clear();
+    virtual function bit contains(Object o);
+    virtual function Iterator iterator();
+    virtual task remove(Object o);
+    virtual function integer size();
+
+    // HashMapEntrySet
+    task new(HASH_MAP_CLASS _hashMap);
+}
+
+task HASH_MAP_ENTRY_SET_CLASS::add(Object o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map entry sets")
+}
+
+task HASH_MAP_ENTRY_SET_CLASS::clear()
+{
+    hashMap.clear();
+}
+
+function bit HASH_MAP_ENTRY_SET_CLASS::contains(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        contains = 0;
+        return;
+    }
+
+    mapEntry = hashMap.findKey(entry.key);
+    contains = (mapEntry != null && mapEntry.equals(entry));
+}
+
+function Iterator HASH_MAP_ENTRY_SET_CLASS::iterator()
+{
+    HASH_MAP_ENTRY_ITERATOR_CLASS entryIter = new(hashMap);
+
+    iterator = entryIter;
+}
+
+task HASH_MAP_ENTRY_SET_CLASS::remove(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        return;
+    }
+
+    mapEntry = hashMap.findKey(entry.key);
+    if (mapEntry != null && mapEntry.equals(entry)) {
+        hashMap.remove(entry.key);
+    }
+}
+
+function integer HASH_MAP_ENTRY_SET_CLASS::size()
+{
+    size = hashMap.size();
+}
+
+task HASH_MAP_ENTRY_SET_CLASS::new(HASH_MAP_CLASS _hashMap)
+{
+    hashMap = _hashMap;
+}
+
+////////////////////////////////////////////////////////////
+// HashMapKeySet
+////////////////////////////////////////////////////////////
+
+local class HASH_MAP_KEY_SET_CLASS
+extends KEY_SET_CLASS
+{
+    local HASH_MAP_CLASS hashMap;
+
+    // Collection
+    virtual task add(KEY_TYPE o);
+    virtual task clear();
+    virtual function bit contains(KEY_TYPE o);
+    virtual function KEY_ITERATOR_CLASS iterator();
+    virtual task remove(KEY_TYPE o);
+    virtual function integer size();
+
+    // HashMapKeySet
+    task new(HASH_MAP_CLASS _hashMap);
+}
+
+task HASH_MAP_KEY_SET_CLASS::add(KEY_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map key sets")
+}
+
+task HASH_MAP_KEY_SET_CLASS::clear()
+{
+    hashMap.clear();
+}
+
+function bit HASH_MAP_KEY_SET_CLASS::contains(KEY_TYPE o)
+{
+    contains = hashMap.containsKey(o);
+}
+
+function KEY_ITERATOR_CLASS HASH_MAP_KEY_SET_CLASS::iterator()
+{
+    HASH_MAP_ENTRY_ITERATOR_CLASS entryIter = new(hashMap);
+    ENTRY_SET_KEY_ITERATOR_CLASS keyIter = new(entryIter);
+
+    iterator = keyIter;
+}
+
+task HASH_MAP_KEY_SET_CLASS::remove(KEY_TYPE o)
+{
+    hashMap.remove(o);
+}
+
+function integer HASH_MAP_KEY_SET_CLASS::size()
+{
+    size = hashMap.size();
+}
+
+task HASH_MAP_KEY_SET_CLASS::new(HASH_MAP_CLASS _hashMap)
+{
+    hashMap = _hashMap;
+}
+
+////////////////////////////////////////////////////////////
+// HashMapValueCollection
+////////////////////////////////////////////////////////////
+
+local class HASH_MAP_VALUE_COLLECTION_CLASS
+extends VALUE_COLLECTION_CLASS
+{
+    local HASH_MAP_CLASS hashMap;
+
+    // Collection
+    virtual task add(VALUE_TYPE o);
+    virtual task clear();
+    virtual function bit contains(VALUE_TYPE o);
+    virtual function VALUE_ITERATOR_CLASS iterator();
+    virtual function integer size();
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+
+    // HashMapValueCollection
+    task new(HASH_MAP_CLASS _hashMap);
+}
+
+function bit HASH_MAP_VALUE_COLLECTION_CLASS::equals(Object o)
+{
+    equals = 0;
+    LOG_MSG(logIntf, LS_FATAL, "equals() not supported on map value collections")
+}
+
+function integer HASH_MAP_VALUE_COLLECTION_CLASS::hashCode()
+{
+    hashCode = 0;
+    LOG_MSG(logIntf, LS_FATAL, "hashCode() not supported on map value collections")
+}
+
+task HASH_MAP_VALUE_COLLECTION_CLASS::add(VALUE_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map value collections")
+}
+
+task HASH_MAP_VALUE_COLLECTION_CLASS::clear()
+{
+    hashMap.clear();
+}
+
+function bit HASH_MAP_VALUE_COLLECTION_CLASS::contains(VALUE_TYPE o)
+{
+    contains = hashMap.containsValue(o);
+}
+
+function VALUE_ITERATOR_CLASS HASH_MAP_VALUE_COLLECTION_CLASS::iterator()
+{
+    HASH_MAP_ENTRY_ITERATOR_CLASS entryIter = new(hashMap);
+    ENTRY_SET_VALUE_ITERATOR_CLASS valueIter = new(entryIter);
+
+    iterator = valueIter;
+}
+
+function integer HASH_MAP_VALUE_COLLECTION_CLASS::size()
+{
+    size = hashMap.size();
+}
+
+task HASH_MAP_VALUE_COLLECTION_CLASS::new(HASH_MAP_CLASS _hashMap)
+{
+    hashMap = _hashMap;
+}
+
+////////////////////////////////////////////////////////////
+// HashMapEntryIterator
+////////////////////////////////////////////////////////////
+
+local class HASH_MAP_ENTRY_ITERATOR_CLASS
+extends Iterator
+{
+    local HASH_MAP_CLASS hashMap;
+    local integer curIndex;
+    local HASH_MAP_ENTRY_CLASS curEntry;
+    local HASH_MAP_ENTRY_CLASS nextEntry;
+
+    task new(HASH_MAP_CLASS _hashMap);
+
+    virtual function bit hasNext();
+    virtual function Object next();
+    virtual task remove();
+
+    local task advance();
+}
+
+task HASH_MAP_ENTRY_ITERATOR_CLASS::new(HASH_MAP_CLASS _hashMap)
+{
+    hashMap = _hashMap;
+
+    curIndex = 0;
+    if (hashMap.count > 0) {
+        advance();
+    }
+}
+
+function bit HASH_MAP_ENTRY_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (nextEntry != null);
+}
+
+function Object HASH_MAP_ENTRY_ITERATOR_CLASS::next()
+{
+    assert(nextEntry != null);
+
+    curEntry = nextEntry;
+    advance();
+    next = curEntry;
+}
+
+task HASH_MAP_ENTRY_ITERATOR_CLASS::remove()
+{
+    if (curEntry == null) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+
+    hashMap.remove(curEntry.key);
+    curEntry = null;
+}
+
+task HASH_MAP_ENTRY_ITERATOR_CLASS::advance()
+{
+    if (nextEntry != null) {
+        nextEntry = nextEntry.nextEntry;
+    }
+    for (; nextEntry == null && curIndex < hashMap.tableSize; ++curIndex) {
+        nextEntry = hashMap.hashTable[curIndex];
+    }
+}
+

@@ -1,0 +1,817 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// AssocArrayMap
+////////////////////////////////////////////////////////////
+
+typedef class ASSOC_ARRAY_MAP_ENTRY_SET_CLASS;
+typedef class ASSOC_ARRAY_MAP_KEY_SET_CLASS;
+typedef class ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS;
+typedef class ASSOC_ARRAY_MAP_SUB_MAP_CLASS;
+
+class ASSOC_ARRAY_MAP_CLASS
+extends SORTED_MAP_CLASS
+{
+    // For local use only!
+    VALUE_TYPE array[];
+
+    // Map
+    virtual task clear();
+    virtual function bit containsKey(KEY_TYPE key);
+    virtual function Set entrySet();
+    virtual function MAP_ENTRY_CLASS findKey(KEY_TYPE key);
+    virtual function VALUE_TYPE get(KEY_TYPE key);
+    virtual function KEY_SET_CLASS keySet();
+    virtual task put(KEY_TYPE key, VALUE_TYPE value);
+    virtual task remove(KEY_TYPE key);
+    virtual function integer size();
+    virtual function VALUE_COLLECTION_CLASS values();
+
+    // SortedMap
+    virtual function KEY_COMPARATOR_CLASS comparator();
+    virtual function KEY_TYPE firstKey();
+    virtual function KEY_TYPE lastKey();
+    virtual function SORTED_MAP_CLASS subMap(KEY_TYPE fromKey, KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS headMap(KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS tailMap(KEY_TYPE fromKey);
+
+    // AssocArrayMap
+    task new();
+
+    // For local use only!
+    function KEY_TYPE findKeyLT(KEY_TYPE key);
+    function KEY_TYPE findKeyGE(KEY_TYPE key);
+}
+
+task ASSOC_ARRAY_MAP_CLASS::clear()
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.clear()",
+        getObjectName()))
+
+    if (destroyValueOnRemove) {
+        integer i;
+
+        if (assoc_index(FIRST, array, i)) {
+            while (1) {
+                VALUE_TYPE victim = array[i];
+                VALUE_DESTROY(victim);
+                if (!assoc_index(NEXT, array, i)) break;
+            }
+        }
+    }
+
+    assoc_index(DELETE, array);
+}
+
+function bit ASSOC_ARRAY_MAP_CLASS::containsKey(KEY_TYPE key)
+{
+    containsKey = assoc_index(CHECK, array, key);
+}
+
+function Set ASSOC_ARRAY_MAP_CLASS::entrySet()
+{
+    ASSOC_ARRAY_MAP_ENTRY_SET_CLASS assocArrayMapEntrySet = new(this);
+    entrySet = assocArrayMapEntrySet;
+}
+
+function MAP_ENTRY_CLASS ASSOC_ARRAY_MAP_CLASS::findKey(KEY_TYPE key)
+{
+    MAP_ENTRY_CLASS entry;
+
+    if (assoc_index(CHECK, array, key)) {
+        entry = new(key, array[key]);
+    }
+
+    findKey = entry;
+}
+
+function VALUE_TYPE ASSOC_ARRAY_MAP_CLASS::get(KEY_TYPE key)
+{
+    get = array[key];
+}
+
+function KEY_SET_CLASS ASSOC_ARRAY_MAP_CLASS::keySet()
+{
+    ASSOC_ARRAY_MAP_KEY_SET_CLASS assocArrayMapKeySet = new(this);
+    keySet = assocArrayMapKeySet;
+}
+
+task ASSOC_ARRAY_MAP_CLASS::put(KEY_TYPE key, VALUE_TYPE value)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.put(%s, %s)",
+        getObjectName(), KEY_DUMP_STRING(key), VALUE_DUMP_STRING(value)))
+
+    if (destroyValueOnRemove) {
+        VALUE_TYPE victim = array[key];
+        VALUE_DESTROY(victim);
+    }
+
+    array[key] = value;
+}
+
+task ASSOC_ARRAY_MAP_CLASS::remove(KEY_TYPE key)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.remove(%s)",
+        getObjectName(), KEY_DUMP_STRING(key)))
+
+    if (destroyValueOnRemove) {
+        VALUE_TYPE victim = array[key];
+        VALUE_DESTROY(victim);
+    }
+
+    assoc_index(DELETE, array, key);
+}
+
+function integer ASSOC_ARRAY_MAP_CLASS::size()
+{
+    size = assoc_index(CHECK, array);
+}
+
+function VALUE_COLLECTION_CLASS ASSOC_ARRAY_MAP_CLASS::values()
+{
+    ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS assocArrayMapValues = new(this);
+    values = assocArrayMapValues;
+}
+
+function KEY_COMPARATOR_CLASS ASSOC_ARRAY_MAP_CLASS::comparator()
+{
+    DEFAULT_KEY_COMPARATOR_CLASS defKeyComp = new;
+    comparator = defKeyComp;
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_CLASS::firstKey()
+{
+    bit gotFirst = assoc_index(FIRST, array, firstKey);
+    assert(gotFirst);
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_CLASS::lastKey()
+{
+    bit gotFirst = assoc_index(FIRST, array, lastKey);
+    assert(gotFirst);
+
+    while (assoc_index(NEXT, array, lastKey)) { }
+}
+
+function SORTED_MAP_CLASS ASSOC_ARRAY_MAP_CLASS::subMap(KEY_TYPE fromKey, KEY_TYPE toKey)
+{
+    ASSOC_ARRAY_MAP_SUB_MAP_CLASS theSubMap = new(this, fromKey, 1, toKey, 1);
+
+    subMap = theSubMap;
+}
+
+function SORTED_MAP_CLASS ASSOC_ARRAY_MAP_CLASS::headMap(KEY_TYPE toKey)
+{
+    ASSOC_ARRAY_MAP_SUB_MAP_CLASS theSubMap = new(this, KEY_NULL, 0, toKey, 1);
+
+    headMap = theSubMap;
+}
+
+function SORTED_MAP_CLASS ASSOC_ARRAY_MAP_CLASS::tailMap(KEY_TYPE fromKey)
+{
+    ASSOC_ARRAY_MAP_SUB_MAP_CLASS theSubMap = new(this, fromKey, 1, KEY_NULL, 0);
+
+    tailMap = theSubMap;
+}
+
+task ASSOC_ARRAY_MAP_CLASS::new()
+{
+    setClassName("AssocArrayMap");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new()",
+        getObjectName()))
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_CLASS::findKeyLT(KEY_TYPE key)
+{
+    KEY_TYPE prevKey;
+
+    bit gotFirst = assoc_index(FIRST, array, findKeyLT);
+    assert(gotFirst && findKeyLT < key);
+
+    while (findKeyLT < key) {
+        prevKey = findKeyLT;
+        if (!assoc_index(NEXT, array, findKeyLT)) break;
+    }
+    findKeyLT = prevKey;
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_CLASS::findKeyGE(KEY_TYPE key)
+{
+    bit gotFirst = assoc_index(FIRST, array, findKeyGE);
+    assert(gotFirst);
+
+    while (findKeyGE < key) {
+        bit gotNext = assoc_index(NEXT, array, findKeyGE);
+        assert(gotNext);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapEntrySet
+////////////////////////////////////////////////////////////
+
+typedef class ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS;
+
+local class ASSOC_ARRAY_MAP_ENTRY_SET_CLASS
+extends Set
+{
+    local ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+
+    // Collection
+    virtual task add(Object o);
+    virtual task clear();
+    virtual function bit contains(Object o);
+    virtual function Iterator iterator();
+    virtual task remove(Object o);
+    virtual function integer size();
+
+    // AssocArrayMapEntrySet
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap);
+}
+
+task ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::add(Object o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map entry sets")
+}
+
+task ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::clear()
+{
+    assocArrayMap.clear();
+}
+
+function bit ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::contains(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        contains = 0;
+        return;
+    }
+
+    mapEntry = assocArrayMap.findKey(entry.key);
+    contains = (mapEntry != null && mapEntry.equals(entry));
+}
+
+function Iterator ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::iterator()
+{
+    KEY_TYPE firstKey;
+    ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS entryIter;
+
+    if (!assoc_index(FIRST, assocArrayMap.array, firstKey)) {
+        firstKey = KEY_NULL;
+    }
+
+    entryIter = new(assocArrayMap, firstKey);
+    iterator = entryIter;
+}
+
+task ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::remove(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        return;
+    }
+
+    cast_assign(mapEntry, assocArrayMap.findKey(entry.key));
+    if (mapEntry != null && mapEntry.equals(entry)) {
+        assocArrayMap.remove(entry.key);
+    }
+}
+
+function integer ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::size()
+{
+    size = assocArrayMap.size();
+}
+
+task ASSOC_ARRAY_MAP_ENTRY_SET_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap)
+{
+    assocArrayMap = _assocArrayMap;
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapKeySet
+////////////////////////////////////////////////////////////
+
+typedef class ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS;
+
+local class ASSOC_ARRAY_MAP_KEY_SET_CLASS
+extends KEY_SET_CLASS
+{
+    local ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+
+    // Collection
+    virtual task add(KEY_TYPE o);
+    virtual task clear();
+    virtual function bit contains(KEY_TYPE o);
+    virtual function KEY_ITERATOR_CLASS iterator();
+    virtual task remove(KEY_TYPE o);
+    virtual function integer size();
+
+    // AssocArrayMapKeySet
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap);
+}
+
+task ASSOC_ARRAY_MAP_KEY_SET_CLASS::add(KEY_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map key sets")
+}
+
+task ASSOC_ARRAY_MAP_KEY_SET_CLASS::clear()
+{
+    assocArrayMap.clear();
+}
+
+function bit ASSOC_ARRAY_MAP_KEY_SET_CLASS::contains(KEY_TYPE o)
+{
+    contains = assocArrayMap.containsKey(o);
+}
+
+function KEY_ITERATOR_CLASS ASSOC_ARRAY_MAP_KEY_SET_CLASS::iterator()
+{
+    ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS keyIter = new(assocArrayMap);
+
+    iterator = keyIter;
+}
+
+task ASSOC_ARRAY_MAP_KEY_SET_CLASS::remove(KEY_TYPE o)
+{
+    assocArrayMap.remove(o);
+}
+
+function integer ASSOC_ARRAY_MAP_KEY_SET_CLASS::size()
+{
+    size = assocArrayMap.size();
+}
+
+task ASSOC_ARRAY_MAP_KEY_SET_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap)
+{
+    assocArrayMap = _assocArrayMap;
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapValueCollection
+////////////////////////////////////////////////////////////
+
+typedef class ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS;
+
+local class ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS
+extends VALUE_COLLECTION_CLASS
+{
+    local ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+
+    // Collection
+    virtual task add(VALUE_TYPE o);
+    virtual task clear();
+    virtual function bit contains(VALUE_TYPE o);
+    virtual function VALUE_ITERATOR_CLASS iterator();
+    virtual function integer size();
+    virtual function bit equals(Object o);
+    virtual function integer hashCode();
+
+    // AssocArrayMapValueCollection
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap);
+}
+
+task ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::add(VALUE_TYPE o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on map value collections")
+}
+
+function integer ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::hashCode()
+{
+    LOG_MSG(logIntf, LS_FATAL, "hashCode() not supported on map value collections")
+}
+
+
+function bit ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::equals(Object o)
+{
+    equals = 0;
+    LOG_MSG(logIntf, LS_FATAL, "equals() not supported on map value collections")
+}
+
+
+task ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::clear()
+{
+    assocArrayMap.clear();
+}
+
+function bit ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::contains(VALUE_TYPE o)
+{
+    contains = assocArrayMap.containsValue(o);
+}
+
+function VALUE_ITERATOR_CLASS ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::iterator()
+{
+    ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS valueIter = new(assocArrayMap);
+
+    iterator = valueIter;
+}
+
+function integer ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::size()
+{
+    size = assocArrayMap.size();
+}
+
+task ASSOC_ARRAY_MAP_VALUE_COLLECTION_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap)
+{
+    assocArrayMap = _assocArrayMap;
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapEntryIterator
+////////////////////////////////////////////////////////////
+
+local class ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS
+extends Iterator
+{
+    local ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+    local KEY_TYPE curKey;
+    local KEY_TYPE nextKey;
+    local KEY_TYPE stopKey;
+
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap,
+        KEY_TYPE _firstKey, KEY_TYPE _stopKey = KEY_NULL);
+
+    virtual function bit hasNext();
+    virtual function Object next();
+    virtual task remove();
+}
+
+task ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap,
+    KEY_TYPE _firstKey, KEY_TYPE _stopKey = KEY_NULL)
+{
+    assocArrayMap = _assocArrayMap;
+    curKey = KEY_NULL;
+    nextKey = _firstKey;
+    stopKey = _stopKey;
+}
+
+function bit ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (nextKey != stopKey);
+}
+
+function Object ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS::next()
+{
+    MAP_ENTRY_CLASS entry;
+
+    assert(nextKey != stopKey);
+
+    curKey = nextKey;
+    entry = new(curKey, assocArrayMap.array[curKey]);
+    if (!assoc_index(NEXT, assocArrayMap.array, nextKey)) {
+        nextKey = stopKey;
+    }
+    next = entry;
+}
+
+task ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS::remove()
+{
+    if (curKey == KEY_NULL) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+
+    assocArrayMap.remove(curKey);
+    curKey = KEY_NULL;
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapKeyIterator
+////////////////////////////////////////////////////////////
+
+local class ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS
+extends KEY_ITERATOR_CLASS
+{
+    local ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+    local KEY_TYPE curKey;
+    local KEY_TYPE nextKey;
+
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap);
+
+    virtual function bit hasNext();
+    virtual function KEY_TYPE next();
+    virtual task remove();
+}
+
+task ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap)
+{
+    assocArrayMap = _assocArrayMap;
+
+    curKey = KEY_NULL;
+    if (!assoc_index(FIRST, assocArrayMap.array, nextKey)) {
+        nextKey = KEY_NULL;
+    }
+}
+
+function bit ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (nextKey != KEY_NULL);
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS::next()
+{
+    MAP_ENTRY_CLASS entry;
+
+    assert(nextKey != KEY_NULL);
+
+    curKey = nextKey;
+    if (!assoc_index(NEXT, assocArrayMap.array, nextKey)) {
+        nextKey = KEY_NULL;
+    }
+    next = curKey;
+}
+
+task ASSOC_ARRAY_MAP_KEY_ITERATOR_CLASS::remove()
+{
+    if (curKey == KEY_NULL) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+
+    assocArrayMap.remove(curKey);
+    curKey = KEY_NULL;
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapValueIterator
+////////////////////////////////////////////////////////////
+
+local class ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS
+extends VALUE_ITERATOR_CLASS
+{
+    local ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+    local KEY_TYPE curKey;
+    local KEY_TYPE nextKey;
+
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap);
+
+    virtual function bit hasNext();
+    virtual function VALUE_TYPE next();
+    virtual task remove();
+}
+
+task ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap)
+{
+    assocArrayMap = _assocArrayMap;
+
+    curKey = KEY_NULL;
+    if (!assoc_index(FIRST, assocArrayMap.array, nextKey)) {
+        nextKey = KEY_NULL;
+    }
+}
+
+function bit ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS::hasNext()
+{
+    hasNext = (nextKey != KEY_NULL);
+}
+
+function VALUE_TYPE ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS::next()
+{
+    MAP_ENTRY_CLASS entry;
+
+    assert(nextKey != KEY_NULL);
+
+    curKey = nextKey;
+    if (!assoc_index(NEXT, assocArrayMap.array, nextKey)) {
+        nextKey = KEY_NULL;
+    }
+    next = assocArrayMap.array[curKey];
+}
+
+task ASSOC_ARRAY_MAP_VALUE_ITERATOR_CLASS::remove()
+{
+    if (curKey == KEY_NULL) {
+        LOG_MSG(logIntf, LS_FATAL, "No valid active element")
+    }
+
+    assocArrayMap.remove(curKey);
+    curKey = KEY_NULL;
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapSubMap
+////////////////////////////////////////////////////////////
+
+typedef class ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS;
+
+class ASSOC_ARRAY_MAP_SUB_MAP_CLASS
+extends SORTED_MAP_CLASS
+{
+    // For local use only!
+    ASSOC_ARRAY_MAP_CLASS assocArrayMap;
+    KEY_TYPE fromKey;
+    bit fromValid;
+    KEY_TYPE toKey;
+    bit toValid;
+
+    // Map
+    virtual function Set entrySet();
+    virtual function MAP_ENTRY_CLASS findKey(KEY_TYPE key);
+    virtual task put(KEY_TYPE key, VALUE_TYPE value);
+    virtual task remove(KEY_TYPE key);
+
+    // SortedMap
+    virtual function KEY_COMPARATOR_CLASS comparator();
+    virtual function KEY_TYPE firstKey();
+    virtual function KEY_TYPE lastKey();
+    virtual function SORTED_MAP_CLASS subMap(KEY_TYPE fromKey, KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS headMap(KEY_TYPE toKey);
+    virtual function SORTED_MAP_CLASS tailMap(KEY_TYPE fromKey);
+
+    // AssocArrayMapSubMap
+    task new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap,
+        KEY_TYPE _fromKey, bit _fromValid,
+        KEY_TYPE _toKey, bit _toValid);
+
+    local function bit inRange(KEY_TYPE key, bit includeToKey = 0);
+}
+
+task ASSOC_ARRAY_MAP_SUB_MAP_CLASS::new(ASSOC_ARRAY_MAP_CLASS _assocArrayMap,
+    KEY_TYPE _fromKey, bit _fromValid,
+    KEY_TYPE _toKey, bit _toValid)
+{
+    assocArrayMap = _assocArrayMap;
+    fromKey = _fromKey;
+    fromValid = _fromValid;
+    toKey = _toKey;
+    toValid = _toValid;
+
+    assert(!fromValid || !toValid || fromKey <= toKey);
+}
+
+function Set ASSOC_ARRAY_MAP_SUB_MAP_CLASS::entrySet()
+{
+    ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS subMapEntrySet = new(this);
+    entrySet = subMapEntrySet;
+}
+
+function MAP_ENTRY_CLASS ASSOC_ARRAY_MAP_SUB_MAP_CLASS::findKey(KEY_TYPE key)
+{
+    if (inRange(key)) {
+        findKey = assocArrayMap.findKey(key);
+    }
+}
+
+task ASSOC_ARRAY_MAP_SUB_MAP_CLASS::put(KEY_TYPE key, VALUE_TYPE value)
+{
+    assert(inRange(key));
+    assocArrayMap.put(key, value);
+}
+
+task ASSOC_ARRAY_MAP_SUB_MAP_CLASS::remove(KEY_TYPE key)
+{
+    if (inRange(key)) {
+        assocArrayMap.remove(key);
+    }
+}
+
+function KEY_COMPARATOR_CLASS ASSOC_ARRAY_MAP_SUB_MAP_CLASS::comparator()
+{
+    comparator = assocArrayMap.comparator();
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_SUB_MAP_CLASS::firstKey()
+{
+    if (fromValid) {
+        firstKey = assocArrayMap.findKeyGE(fromKey);
+    } else {
+        firstKey = assocArrayMap.firstKey();
+    }
+
+    if (toValid) {
+        assert(firstKey < toKey);
+    }
+}
+
+function KEY_TYPE ASSOC_ARRAY_MAP_SUB_MAP_CLASS::lastKey()
+{
+    if (toValid) {
+        lastKey = assocArrayMap.findKeyLT(toKey);
+    } else {
+        lastKey = assocArrayMap.lastKey();
+    }
+
+    if (fromValid) {
+        assert(lastKey >= fromKey);
+    }
+}
+
+function SORTED_MAP_CLASS ASSOC_ARRAY_MAP_SUB_MAP_CLASS::subMap(KEY_TYPE fromKey, KEY_TYPE toKey)
+{
+    assert(inRange(fromKey, 1));
+    assert(inRange(toKey, 1));
+    subMap = assocArrayMap.subMap(fromKey, toKey);
+}
+
+function SORTED_MAP_CLASS ASSOC_ARRAY_MAP_SUB_MAP_CLASS::headMap(KEY_TYPE toKey)
+{
+    assert(inRange(toKey, 1));
+    headMap = assocArrayMap.headMap(toKey);
+}
+
+function SORTED_MAP_CLASS ASSOC_ARRAY_MAP_SUB_MAP_CLASS::tailMap(KEY_TYPE fromKey)
+{
+    assert(inRange(fromKey, 1));
+    tailMap = assocArrayMap.tailMap(fromKey);
+}
+
+function bit ASSOC_ARRAY_MAP_SUB_MAP_CLASS::inRange(KEY_TYPE key, bit includeToKey = 0)
+{
+    inRange = (!fromValid || key >= fromKey) &&
+              (!toValid || (includeToKey ? key <= toKey : key < toKey));
+}
+
+////////////////////////////////////////////////////////////
+// AssocArrayMapSubMapEntrySet
+////////////////////////////////////////////////////////////
+
+local class ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS
+extends Set
+{
+    local ASSOC_ARRAY_MAP_SUB_MAP_CLASS subMap;
+
+    // Collection
+    virtual task add(Object o);
+    virtual function bit contains(Object o);
+    virtual function bit isEmpty();
+    virtual function Iterator iterator();
+    virtual task remove(Object o);
+    virtual function bit equals(Object o);
+
+    // AssocArrayMapSubMapEntrySet
+    task new(ASSOC_ARRAY_MAP_SUB_MAP_CLASS _subMap);
+}
+
+task ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::add(Object o)
+{
+    LOG_MSG(logIntf, LS_FATAL, "add() not supported on sub-map entry sets")
+}
+
+function bit ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::equals(Object o)
+{
+    equals = 0;
+    LOG_MSG(logIntf, LS_FATAL, "equals() not supported on sub-map entry sets")
+}
+
+function bit ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::contains(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        contains = 0;
+        return;
+    }
+
+    mapEntry = subMap.findKey(entry.key);
+    contains = (mapEntry != null && mapEntry.equals(entry));
+}
+
+function bit ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::isEmpty()
+{
+    Iterator i = iterator();
+    isEmpty = !i.hasNext();
+}
+
+function Iterator ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::iterator()
+{
+    ASSOC_ARRAY_MAP_CLASS assocArrayMap = subMap.assocArrayMap;
+    ASSOC_ARRAY_MAP_ENTRY_ITERATOR_CLASS entryIter = new(assocArrayMap,
+        subMap.fromValid ? assocArrayMap.findKeyGE(subMap.fromKey) : assocArrayMap.firstKey(),
+        subMap.toValid ? assocArrayMap.findKeyGE(subMap.toKey) : KEY_NULL);
+
+    iterator = entryIter;
+}
+
+task ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::remove(Object o)
+{
+    MAP_ENTRY_CLASS entry, mapEntry;
+
+    if (o == null || !cast_assign(entry, o, CHECK)) {
+        return;
+    }
+
+    cast_assign(mapEntry, subMap.findKey(entry.key));
+    if (mapEntry != null && mapEntry.equals(entry)) {
+        subMap.assocArrayMap.remove(entry.key);
+    }
+}
+
+task ASSOC_ARRAY_MAP_SUB_MAP_ENTRY_SET_CLASS::new(ASSOC_ARRAY_MAP_SUB_MAP_CLASS _subMap)
+{
+    subMap = _subMap;
+}
+

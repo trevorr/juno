@@ -1,0 +1,98 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+////////////////////////////////////////////////////////////
+// HashSet
+////////////////////////////////////////////////////////////
+
+class HASH_SET_CLASS
+extends SET_CLASS
+{
+    local HASH_SET_HASH_MAP_CLASS hashMap;
+
+    // Collection
+    virtual task add(ELEMENT_TYPE o);
+    virtual task clear();
+    virtual function bit contains(ELEMENT_TYPE o);
+    virtual function ITERATOR_CLASS iterator();
+    virtual task remove(ELEMENT_TYPE o);
+    virtual task setDestroyOnRemove(bit value);
+    virtual function integer size();
+
+    // HashSet
+    task new(integer initialCapacity = 16);
+}
+
+task HASH_SET_CLASS::add(ELEMENT_TYPE o)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.add(%s)",
+        getObjectName(), DUMP_STRING(o)))
+
+    hashMap.put(o, null);
+}
+
+task HASH_SET_CLASS::clear()
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.clear()",
+        getObjectName()))
+
+    hashMap.clear();
+}
+
+function bit HASH_SET_CLASS::contains(ELEMENT_TYPE o)
+{
+    contains = (hashMap.findKey(o) != null);
+}
+
+function ITERATOR_CLASS HASH_SET_CLASS::iterator()
+{
+    SET_CLASS keySet;
+
+    keySet = hashMap.keySet();
+    iterator = keySet.iterator();
+}
+
+task HASH_SET_CLASS::remove(ELEMENT_TYPE o)
+{
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.remove(%s)",
+        getObjectName(), DUMP_STRING(o)))
+
+    hashMap.remove(o);
+}
+
+task HASH_SET_CLASS::setDestroyOnRemove(bit value)
+{
+    super.setDestroyOnRemove(value);
+    hashMap.setDestroyKeyOnRemove(value);
+}
+
+function integer HASH_SET_CLASS::size()
+{
+    size = hashMap.size();
+}
+
+task HASH_SET_CLASS::new(integer initialCapacity = 16)
+{
+    setClassName("HashSet");
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new(%0d)",
+        getObjectName(), initialCapacity))
+
+    hashMap = new(initialCapacity);
+
+    LOG_MSG(logIntf, LS_DEBUG, psprintf("%s.new: hashMap=%s",
+        getObjectName(), OBJECT_NAME(hashMap)))
+}
+

@@ -1,0 +1,36 @@
+#ifndef INC__COMMON_VRI
+#define INC__COMMON_VRI
+
+#include <vera_defines.vrh>
+
+////////////////////////////////////////////////////////////
+// Debugging definitions
+////////////////////////////////////////////////////////////
+
+#ifndef assertFailed
+#define assertFailed error
+#endif
+
+// Juno treats assert as a built-in function
+#ifndef __JUNO__
+#define assert(expr) if ((!(expr)) !== 0) \
+    assertFailed("Assertion failed (%s, line %0d): %s\n", __FILE__, __LINE__, "expr")
+#endif
+
+////////////////////////////////////////////////////////////
+// Universal constants
+////////////////////////////////////////////////////////////
+
+#define TRUE  1'b1
+#define FALSE 1'b0
+#define UNDEFINED 1'bx
+
+////////////////////////////////////////////////////////////
+// Common typedefs
+////////////////////////////////////////////////////////////
+
+#define Byte bit[7:0]
+#define Dword bit[31:0]
+#define Qword bit[63:0]
+
+#endif // INC__COMMON_VRI

@@ -1,0 +1,911 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="content-type"
+        content="text/html; charset=us-ascii">
+<title>Vera To Jove/Juno Quick Reference Guide</title>
+<style type="text/css">
+  .comment { color: rgb(0, 153, 0);
+    }
+
+  .preprocessor { color: rgb(51, 51, 255);
+    }
+
+  table { border-right-style: solid;
+    border-right-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-width: 1px;
+    }
+
+  td { vertical-align: top;
+    }
+
+  td.h1 { background-color: rgb(0, 0, 0);
+    color: rgb(255, 255, 255);
+    text-align: center;
+    font-weight: bold;
+    font-size: large;
+    }
+
+  td.h2 { font-weight: bold;
+    font-size: large;
+    background-color: rgb(204, 204, 204);
+    color: rgb(51, 51, 51);
+    text-align: center;
+    border-top-style: solid;
+    border-top-width: 1px;
+    border-left-style: solid;
+    border-left-width: 1px;
+    }
+
+  td.h3 { background-color: rgb(240, 240, 240);
+    border-top-style: solid;
+    border-top-width: 1px;
+    border-left-style: solid;
+    border-left-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-width: 1px;
+    font-size: large;
+    }
+
+  td.entry { border-top-style: solid;
+    border-top-width: 1px;
+    border-left-style: solid;
+    border-left-width: 1px;
+    font-family: monospace;
+    font-size: 10pt;
+    background-color: rgb(240, 240, 240);
+    }
+
+  td.example { font-family: monospace;
+    padding-left: 40px;
+    padding-top: 20px;
+    border-left-style: solid;
+    border-left-width: 1px;
+    font-size: 9pt;
+    padding-bottom: 20px;
+    }
+
+
+  </style>
+</head>
+<body>
+<h1>Vera To Jove/Juno Quick Reference Guide</h1>
+<p>Copyright &copy; 2005 Newisys, Inc. Licensed under the <a href="http://opensource.org/licenses/osl-2.0.php">Open Software License version 2.0</a>. </p>
+<p>Product and company names mentioned herein may be trademarks of their respective owners.</p>
+<p>Last updated 12/20/05</p>
+<br>
+<table style="text-align: left;"
+         border="0"
+         cellpadding="2"
+         cellspacing="0">
+  <tbody>
+    <tr>
+      <td style="width: 50%;"
+            class="h1">Vera<br></td>
+      <td style="width: 50%;"
+            class="h1">Java<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="h2"
+            colspan="2"
+            rowspan="1">Data Types<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">integer<br></td>
+      <td style="width: 50%;"
+            class="entry">int (non-X), java.lang.Integer (null for X)<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">integer a = 1;<br>
+        integer b;<br>
+        b = 2;</td>
+      <td style="width: 50%;"
+            class="example">int a = 1;<br>
+        Integer b = null;<br>
+        b = 2;</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">bit/reg</td>
+      <td style="width: 50%;"
+            class="entry">com.newisys.verilog.util.Bit</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">bit a = 1&rsquo;b1;<br>
+        bit b = 1&rsquo;b0;<br>
+        bit x = 1&rsquo;bx;<br>
+        bit z = 1&rsquo;bz;</td>
+      <td style="width: 50%;"
+            class="example">Bit a = Bit.ONE;<br>
+        Bit b = Bit.ZERO;<br>
+        Bit x = Bit.X;<br>
+        Bit z = Bit.Z;</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">bit/reg [n:0]</td>
+      <td style="width: 50%;"
+            class="entry">com.newisys.verilog.util.BitVector</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">bit[4:0] bv;<br>
+        bv = 5&rsquo;h1F;</td>
+      <td style="width: 50%;"
+            class="example">BitVector bv = new BitVector(5);<br>
+        bv = new BitVector(5, 0x1F); <span class="comment">//
+        preferred</span><br>
+        bv = new BitVector("5&rsquo;h1F"); <span class="comment">// less
+        efficient</span></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">string</td>
+      <td style="width: 50%;"
+            class="entry">java.lang.String,
+        com.newisys.juno.runtime.JunoString</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">string s = "text";</td>
+      <td style="width: 50%;"
+            class="example">String s = "text";</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">event</td>
+      <td style="width: 50%;"
+            class="entry">com.newisys.juno.runtime.JunoEvent</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">event e;<br>
+        trigger(ON, e);<br>
+        sync(ALL, e);<br></td>
+      <td style="width: 50%;"
+            class="example">JunoEvent e = new JunoEvent();<br>
+        Juno.trigger(Juno.ON, e);<br>
+        Juno.sync(Juno.ALL, e);<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">enum</td>
+      <td style="width: 50%;"
+            class="entry">subclass of
+        com.newisys.juno.runtime.JunoEnum</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">enum Color = RED, BLUE;</td>
+      <td style="width: 50%;"
+            class="example">public enum Color implements JunoEnum&lt;Color&gt;<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; @RandExclude UNDEFINED(null), RED(0), BLUE(1);<br>
+        &nbsp;&nbsp;&nbsp; <span class="comment">// followed by boilerplate JunoEnum implementation;<br>
+        &nbsp;&nbsp;&nbsp; // see a translated enum for complete contents</span><br>
+        }</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">arrays (fixed, dynamic, multi-dimensional)</td>
+      <td style="width: 50%;"
+            class="entry">Java arrays</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">integer a[4] = { 1, 2, 3, 4 };<br>
+        integer b[4][4];<br>
+        MyClass c[4];<br>
+        integer d[*];<br>
+        d = new[4];<br></td>
+      <td style="width: 50%;"
+            class="example">int[] a = { 1, 2, 3, 4 };<br>
+        Integer[][] b = new Integer[4][4];<br>
+        MyClass[] = new MyClass[4];<br>
+        Integer[] d;<br>
+        d = new Integer[4];<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">arrays (associative)</td>
+      <td style="width: 50%;"
+            class="entry">com.newisys.juno.runtime.BitBitAssocArray,
+        com.newisys.juno.runtime.BitObjectAssocArray,
+        com.newisys.juno.runtime.StringObjectAssocArray</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">bit[4:0] a[];<br>
+        MyClass b[];<br>
+        MyClass c[string];<br></td>
+      <td style="width: 50%;"
+            class="example">
+        <span class="comment">// NOTE: associative arrays are intended for Vera<br>
+      // compatibility; new code should use the Java<br>
+      // collection classes<br>
+      </span><br>
+		BitBitAssocArray a = new BitBitAssocArray(5);<br>
+        BitObjectAssocArray b = new BitObjectAssocArray();<br>
+        StringObjectAssocArray c = new StringObjectAssocArray();</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">port</td>
+      <td style="width: 50%;"
+            class="entry">class<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">port P<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; x;<br>
+        &nbsp;&nbsp;&nbsp; y;<br>
+        }<br></td>
+      <td style="width: 50%;"
+            class="example">
+        <span class="comment">// NOTE: port classes are not intended to be<br>
+        // written by hand; use the jove-ifgen tool<br>
+        </span><br>
+		public class P<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; public InOutSignal x;<br>
+        &nbsp;&nbsp;&nbsp; public InOutSignal y;<br>
+        <br>
+        &nbsp;&nbsp;&nbsp; public P()<br>
+        &nbsp;&nbsp;&nbsp; {<br>
+        &nbsp;&nbsp;&nbsp; }<br>
+        <br>
+        &nbsp;&nbsp;&nbsp; public P(InOutSignal x, InOutSignal y)<br>
+        &nbsp;&nbsp;&nbsp; {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; this.x = x;<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; this.y = y;<br>
+        &nbsp;&nbsp;&nbsp; }<br>
+        }<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">interface</td>
+      <td style="width: 50%;"
+            class="entry">class<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">interface I<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; input clk CLOCK hdl_node "test_top.SystemClock";<br>
+        &nbsp;&nbsp;&nbsp; inout x PSAMPLE PHOLD #1 hdl_node "test_top.x";<br>
+        &nbsp;&nbsp;&nbsp; inout y PSAMPLE PHOLD #1 hdl_node "test_top.y";<br>
+        }<br>
+        <br></td>
+      <td style="width: 50%;"
+            class="example">
+        <span class="comment">// NOTE: interface classes are not intended to be<br>
+        // written by hand; use the jove-ifgen tool<br>
+      </span><br>
+		public final class I<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; public final static ClockSignal clk =
+        Juno.simulation.getClockSignal("I_clk", 1);<br>
+        &nbsp;&nbsp;&nbsp; public final static InOutSignal x =
+        Juno.simulation.getInOutSignal("I_x", clk, EdgeSet.POSEDGE, 0,
+        EdgeSet.POSEDGE, 1, 1);<br>
+        &nbsp;&nbsp;&nbsp; public final static InOutSignal y =
+        Juno.simulation.getInOutSignal("I_y", clk, EdgeSet.POSEDGE, 0,
+        EdgeSet.POSEDGE, 1, 1);<br>
+        }<br>
+        <br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">bind</td>
+      <td style="width: 50%;"
+            class="entry">constant<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">bind B P<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; x I.x;<br>
+        &nbsp;&nbsp;&nbsp; y I.y;<br>
+        }<br></td>
+      <td style="width: 50%;"
+            class="example">
+        <span class="comment">// NOTE: bind constants are not intended to be<br>
+        // written by hand; use the jove-ifgen tool<br>
+      </span><br>
+		public final static P B = new P(I.x, I.y);<br>
+        <span class="comment">// OR</span><br>
+        public final static P B = new P();<br>
+        static<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; B.x = I.x;<br>
+        &nbsp;&nbsp;&nbsp; B.y = I.y;<br>
+        }<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="h2"
+            colspan="2"
+            rowspan="1">Sequential Control<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">if-else<br></td>
+      <td style="width: 50%;"
+            class="entry">if-else<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">if (1) { <span class="comment">// condition is
+        integer</span><br>
+        } else {<br>
+        }<br></td>
+      <td style="width: 50%;"
+            class="example">if (true) { <span class="comment">// condition is
+        boolean</span><br>
+        } else {<br>
+        }<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">case<br></td>
+      <td style="width: 50%;"
+            class="entry">switch (char, byte, short, int expression; constant
+        case labels), if-else chain<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">integer i;<br>
+        case (i) {<br>
+        &nbsp;&nbsp;&nbsp; 1: foo();<br>
+        &nbsp;&nbsp;&nbsp; 2: bar();<br>
+        &nbsp;&nbsp;&nbsp; default: baz();<br>
+        }<br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        string s;<br>
+        case (s) {<br>
+        &nbsp;&nbsp;&nbsp; "foo": foo();<br>
+        &nbsp;&nbsp;&nbsp; "bar": bar();<br>
+        &nbsp;&nbsp;&nbsp; default: baz();<br>
+        }<br></td>
+      <td style="width: 50%;"
+            class="example">int i;<br>
+        switch (i) {<br>
+        case 1:<br>
+        &nbsp;&nbsp;&nbsp; foo();<br>
+        &nbsp;&nbsp;&nbsp; break;<br>
+        case 2:<br>
+        &nbsp;&nbsp;&nbsp; bar();<br>
+        &nbsp;&nbsp;&nbsp; break;<br>
+        default:<br>
+        &nbsp;&nbsp;&nbsp; baz();<br>
+        }<br>
+        <br>
+        String s;<br>
+        if ("foo".equals(s)) foo();<br>
+        else if ("bar".equals(s)) bar();<br>
+        else baz();<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">repeat<br></td>
+      <td style="width: 50%;"
+            class="entry">for<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">repeat (10) {}<br></td>
+      <td style="width: 50%;"
+            class="example">for (int i = 0; i &lt; 10; ++i) {}<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">for<br></td>
+      <td style="width: 50%;"
+            class="entry">for<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">for (int i = 0; i &lt; 10; ++i) {}</td>
+      <td style="width: 50%;"
+            class="example">for (int i = 0; i &lt; 10; ++i) {}</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">while<br></td>
+      <td style="width: 50%;"
+            class="entry">while<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">while (1) {} <span class="comment">// condition is
+        integer</span><br></td>
+      <td style="width: 50%;"
+            class="example">while (true) {} <span class="comment">// condition
+        is boolean</span><br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">do-while<br></td>
+      <td style="width: 50%;"
+            class="entry">do-while<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">do () while (1); <span class="comment">// condition
+        is integer</span></td>
+      <td style="width: 50%;"
+            class="example">do {} while (true); <span class="comment">//
+        condition is boolean</span></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">foreach<br></td>
+      <td style="width: 50%;"
+            class="entry">for<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">string words[$] = { "a", "b" };<br>
+        foreach (words, word) {}</td>
+      <td style="width: 50%;"
+            class="example">String[] words = { "a", "b" };<br>
+        for (String word : words) {}</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">break/continue<br></td>
+      <td style="width: 50%;"
+            class="entry">break/continue<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">while (1) {<br>
+        &nbsp;&nbsp;&nbsp; if (foo()) continue;<br>
+        &nbsp;&nbsp;&nbsp; if (bar()) break;<br>
+        }<br></td>
+      <td style="width: 50%;"
+            class="example">while (true) {<br>
+        &nbsp;&nbsp;&nbsp; if (foo()) continue;<br>
+        &nbsp;&nbsp;&nbsp; if (bar()) break;<br>
+        }</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">randcase<br></td>
+      <td style="width: 50%;"
+            class="entry">switch(Juno.randcase())<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">randcase {<br>
+        &nbsp;&nbsp;&nbsp; 50: foo();<br>
+        &nbsp;&nbsp;&nbsp; 25: bar();<br>
+        &nbsp;&nbsp;&nbsp; 25: baz();<br>
+        }<br></td>
+      <td style="width: 50%;"
+            class="example">int[] weights = { 50, 25, 25 };<br>
+        switch (Juno.randcase(weights)) {<br>
+        case 0:<br>
+        &nbsp;&nbsp;&nbsp; foo();<br>
+        &nbsp;&nbsp;&nbsp; break;<br>
+        case 1:<br>
+        &nbsp;&nbsp;&nbsp; bar();<br>
+        &nbsp;&nbsp;&nbsp; break;<br>
+        default: <span class="comment">// use default for last case for
+        DA/DU</span><br>
+        &nbsp;&nbsp;&nbsp; baz();<br>
+        }<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">breakpoint<br></td>
+      <td style="width: 50%;"
+            class="entry">dummy statement<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">breakpoint;<br></td>
+      <td style="width: 50%;"
+            class="example">System.out.println("breakpoint"); <span class=
+            "comment">// set breakpoint here</span></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="h2"
+            colspan="2"
+            rowspan="1">Concurrency Control / Synchronization<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">fork<br></td>
+      <td style="width: 50%;"
+            class="entry">Juno.fork<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">fork<br>
+        { foo(); }<br>
+        { bar(); }<br>
+        join none<br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        <br>
+        fork<br>
+        { foo(); }<br>
+        { bar(); }<br>
+        join all<br></td>
+      <td style="width: 50%;"
+            class="example">Juno.fork("foo", new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; foo();<br>
+        &nbsp;&nbsp;&nbsp; }<br>
+        });<br>
+        Juno.fork("bar", new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; bar();<br>
+        &nbsp;&nbsp;&nbsp; }<br>
+        });<br>
+        <br>
+        Juno.simulation.joinAll(<br>
+        &nbsp;&nbsp;&nbsp; Juno.fork("foo", new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        foo();<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; }<br>
+        &nbsp;&nbsp;&nbsp; }),<br>
+        &nbsp;&nbsp;&nbsp; Juno.fork("bar", new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        bar();<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; }<br>
+        &nbsp;&nbsp;&nbsp; })<br>
+        );<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">shadow variables<br></td>
+      <td style="width: 50%;"
+            class="entry">new variable initialized from snapshot
+        variable<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">shadow integer i = 1;<br>
+        fork {<br>
+        &nbsp;&nbsp;&nbsp; ++i;<br>
+        } join none<br></td>
+      <td style="width: 50%;"
+            class="example">int i = 1;<br>
+        final int forked_i = i; <span class="comment">// make
+        snapshot</span><br>
+        Juno.fork(new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; int i2 = forked_i; <span class="comment">// declare new variable</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ++i2;<br>
+        &nbsp;&nbsp;&nbsp; }<br>
+        });<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">suspend_thread()<br></td>
+      <td style="width: 50%;"
+            class="entry">Juno.simulation.yield()<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">suspend_thread();<br></td>
+      <td style="width: 50%;"
+            class="example">Juno.simulation.yield();<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">wait_child()<br></td>
+      <td style="width: 50%;"
+            class="entry">Juno.wait_child()<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">fork {<br>
+        &nbsp;&nbsp;&nbsp; foo();<br>
+        } join none<br>
+        wait_child();<br></td>
+      <td style="width: 50%;"
+            class="example"><span class="comment">// blocks containing
+        wait_child() must create a new thread context</span><br>
+        Juno.enter_context();<br>
+        try {<br>
+        &nbsp;&nbsp;&nbsp; Juno.fork(new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        foo();<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; }<br>
+        &nbsp;&nbsp;&nbsp; });<br>
+        &nbsp;&nbsp;&nbsp; Juno.wait_child();<br>
+        } finally {<br>
+        &nbsp;&nbsp;&nbsp; <span class="comment">// ensure context is always
+        exited</span><br>
+        &nbsp;&nbsp;&nbsp; Juno.leave_context();<br>
+        }<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">wait_var()<br></td>
+      <td style="width: 50%;"
+            class="entry">Juno.wait_var()<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">int i = 0;<br>
+        fork {<br>
+        &nbsp;&nbsp;&nbsp; wait_var(i);<br>
+        }<br>
+        {<br>
+        &nbsp;&nbsp;&nbsp; i = 1;<br>
+        } join all<br></td>
+      <td style="width: 50%;"
+            class="example"><span class="comment">// only final variables are
+        accessible to local classes;<br>
+        </span> <span class="comment">// a
+        single-element array is a useful technique for allowing<br>
+        </span> <span class="comment">// local classes to assign to shared
+        variables<br>
+        </span> final int[] i_holder = { 0 };<br>
+        <span class="comment">// wait_var is emulated using an associated
+        event<br>
+        </span> final JunoEvent i_changed = new JunoEvent();<br>
+        Juno.simulation.joinAll(<br>
+        &nbsp;&nbsp;&nbsp; Juno.fork(new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        Juno.sync(Juno.ANY, i_changed);<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; }<br>
+        &nbsp;&nbsp;&nbsp; }),<br>
+        &nbsp;&nbsp;&nbsp; Juno.fork(new Runnable() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; public void run() {<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; final int
+        old_i = i_holder[0];<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        i_holder[0] = 1;<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span class="comment">// trigger associated event iff value
+        changed</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if
+        (i_holder[0] != old_i) Juno.trigger(i_changed);<br>
+        &nbsp;&nbsp;&nbsp; &nbsp;&nbsp;&nbsp; }<br>
+        &nbsp;&nbsp;&nbsp; })<br>
+        );</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">terminate<br></td>
+      <td style="width: 50%;"
+            class="entry">Juno.terminate<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">terminate;<br></td>
+      <td style="width: 50%;"
+            class="example">Juno.simulation.terminate();<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">mailboxes<br></td>
+      <td style="width: 50%;"
+            class="entry">com.newisys.dv.Mailbox<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">integer mb = alloc(MAILBOX, 0, 1);<br>
+        mailbox_put(mb, foo);<br>
+        mailbox_get(WAIT, mb, foo);<br></td>
+      <td style="width: 50%;"
+            class="example">Mailbox mb = Juno.simulation.createMailbox();<br>
+        mb.put(foo);<br>
+        foo = mb.getWait();<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">semaphores<br></td>
+      <td style="width: 50%;"
+            class="entry">com.newisys.dv.Semaphore<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">integer sem = alloc(SEMAPHORE, 0, 1, 1);<br>
+        semaphore_get(WAIT, sem, 1);<br>
+        semaphore_put(sem, 1);<br></td>
+      <td style="width: 50%;"
+            class="example">Semaphore sem =
+        Juno.simulation.createSemaphore(1);<br>
+        sem.acquire(1);<br>
+        sem.release(1);<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">regions<br></td>
+      <td style="width: 50%;"
+            class="entry">unsupported<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="h2"
+            colspan="2"
+            rowspan="1">Signal Operations</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronize to system clock<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">@(posedge CLOCK);</td>
+      <td style="width: 50%;"
+            class="example">Juno.systemClock.syncEdge(EdgeSet.POSEDGE);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronize to specific edge<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">@(negedge bind.$foo);</td>
+      <td style="width: 50%;"
+            class="example">bind.foo.syncEdge(EdgeSet.NEGEDGE);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronize to change/any edge<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">@(bind.$foo);</td>
+      <td style="width: 50%;"
+            class="example">bind.foo.syncEdge(EdgeSet.ANYEDGE);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronize to sample edge (aka void expect)<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">@1 bind.$foo == void;</td>
+      <td style="width: 50%;"
+            class="example">bind.foo.syncSampleDelay(1);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronize to drive edge (aka void drive)<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">@1 bind.$foo = void;</td>
+      <td style="width: 50%;"
+            class="example">bind.foo.syncDriveDelay(1);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronous sample<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">var = bind.$foo;</td>
+      <td style="width: 50%;"
+            class="example">var = bind.foo.sample();</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Asynchronous sample<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">var = bind.$foo async;<br>
+        if (bind.$foo) {} <span class="comment">// implicit async
+        sample<br>
+        </span></td>
+      <td style="width: 50%;"
+            class="example">var = bind.foo.sampleAsync();<br>
+        if (bind.foo.sampleAsync().isNotZero()) {}<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Synchronous drive<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">bind.$foo = var;</td>
+      <td style="width: 50%;"
+            class="example">bind.foo.drive(var);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            colspan="2"
+            rowspan="1"
+            class="h3">Asynchronous drive<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">bind.$foo = var async;</td>
+      <td style="width: 50%;"
+            class="example">bind.foo.driveAsync(var);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="h2"
+            colspan="2"
+            rowspan="1">Vera Built-in Functions</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">printf(), delay(), trigger(), etc.<br></td>
+      <td style="width: 50%;"
+            class="entry">static methods in
+        com.newisys.juno.runtime.Juno<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="example">delay(10);<br>
+        printf("%0d\n", foo);</td>
+      <td style="width: 50%;"
+            class="example">Juno.delay(10);<br>
+        Juno.printf("%0d\n", foo);</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="h2"
+            colspan="2"
+            rowspan="1">Unsupported Vera Features</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">pack/unpack<br></td>
+      <td style="width: 50%;"
+            class="entry">unsupported<br></td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">constraint-based randomization of arrays<br></td>
+      <td style="width: 50%;"
+            class="entry">unsupported</td>
+    </tr>
+    <tr>
+      <td style="width: 50%;"
+            class="entry">Smart Queues<br></td>
+      <td style="width: 50%;"
+            class="entry">unsupported</td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>
+
+

@@ -1,0 +1,58 @@
+/*
+ * Copyright (C) 2005 Newisys, Inc. or its licensors, as applicable.
+ *
+ * Licensed under the Open Software License version 2.0 (the "License"); you
+ * may not use this file except in compliance with the License. You should
+ * have received a copy of the License along with this software; if not, you
+ * may obtain a copy of the License at
+ *
+ * http://opensource.org/licenses/osl-2.0.php
+ *
+ * This software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
+
+#include "log.vrh"
+
+class MyErrorListener
+extends ErrorListener
+{
+    virtual task notify(LogSeverity severity)
+    {
+        printf("MyErrorListener::notify(%s)\n", severity);
+    }
+}
+
+program main
+{
+    LogInterface logIntf;
+    ErrorManager errMgr;
+    MyErrorListener lsnr;
+    bit[63:0] x = 64'h1020304050607080;
+
+    // create LogInterface
+    logIntf = new("test");
+    logIntf.setMinSeverity(LS_DEBUG);
+
+    // add error listener
+    errMgr = logIntf.getErrorManager();
+    lsnr = new;
+    errMgr.addListener(lsnr);
+
+    // do some logging
+    logIntf.log(LS_DEBUG, "msg", psprintf("dec x = %0d", x));
+    // 0:0,test,debug,msg,dec x = 1161981756646125696
+    logIntf.log(LS_DEBUG, "msg", psprintf("hex x = 'h%0h", x));
+    // 0:0,test,debug,msg,hex x = 'h1020304050607080
+    logIntf.log(LS_DEBUG, "msg", secsToStr(3661));
+    // 0:0,test,error,msg,01:01:01
+    logIntf.log(LS_DEBUG, "msg", secsToStr(7199));
+    // 0:0,test,error,msg,01:59:59
+    logIntf.log(LS_ERROR, "msg", "error!");
+    // 0:0,test,error,msg,error!
+    // MyErrorListener::notify(LS_ERROR)
+    logIntf.finish();
+    // 0:0,log,system,finish,"0 warnings, 1 errors"
+}
+
